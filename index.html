@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VoiceBridge — Communication Aid</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════
+   DESIGN TOKENS
+══════════════════════════════════════════ */
+:root {
+  --bg: #0b0d12;
+  --s1: #111420;
+  --s2: #171b28;
+  --s3: #1d2235;
+  --b1: #222840;
+  --b2: #2c3450;
+  --text: #e8ecf8;
+  --sub: #566080;
+  --sub2: #8b96b8;
+  --you: #4f8ef7;
+  --you-d: #0e1f44;
+  --you-b: rgba(79,142,247,0.25);
+  --them: #2dd4a0;
+  --them-d: #071c16;
+  --them-b: rgba(45,212,160,0.25);
+  --gold: #f5a623;
+  --gold-d: #1e1205;
+  --red: #f26b6b;
+  --red-d: #200a0a;
+  --r: 14px;
+  --rsm: 9px;
+  --rxs: 6px;
+  --fs: 1rem;        /* base, overridden by accessibility mode */
+  --fs-sm: 0.75rem;
+  --fs-xs: 0.65rem;
+}
+
+body.large-text {
+  --fs: 1.22rem;
+  --fs-sm: 0.92rem;
+  --fs-xs: 0.78rem;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* ══════════════════════════════════════════
+   SCREENS
+══════════════════════════════════════════ */
+.screen { display: none; flex-direction: column; height: 100dvh; width: 100%; position: absolute; top: 0; left: 0; }
+.screen.active { display: flex; }
+
+/* ══════════════════════════════════════════
+   TOPBAR
+══════════════════════════════════════════ */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--b1);
+  background: var(--s1);
+  flex-shrink: 0; min-height: 56px;
+}
+.wordmark {
+  font-size: 0.72rem; font-weight: 800;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--you);
+  display: flex; align-items: center; gap: 7px;
+}
+.wordmark::before {
+  content:''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--you); box-shadow: 0 0 10px var(--you);
+  display: inline-block;
+}
+.tbar-sp { flex: 1; }
+.ibtn {
+  background: none; border: 1px solid var(--b1); border-radius: var(--rsm);
+  color: var(--sub2); width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1rem; transition: border-color .2s, color .2s; flex-shrink: 0;
+}
+.ibtn:hover { border-color: var(--text); color: var(--text); }
+.ibtn.on { border-color: var(--you); color: var(--you); background: var(--you-d); }
+.badge {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--you-d); border: 1.5px solid var(--you-b);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.62rem; font-weight: 800; color: var(--you); letter-spacing: 0;
+}
+
+/* ══════════════════════════════════════════
+   SCENARIO SCREEN
+══════════════════════════════════════════ */
+#scScreen { background: var(--bg); }
+.sc-hero { padding: 28px 20px 22px; border-bottom: 1px solid var(--b1); flex-shrink: 0; }
+.sc-title { font-family: 'Instrument Serif', serif; font-size: 1.9rem; line-height: 1.2; margin-bottom: 6px; }
+.sc-sub { font-size: var(--fs-sm); color: var(--sub2); line-height: 1.65; font-weight: 400; }
+
+.sc-scroll { flex: 1; overflow-y: auto; padding: 18px 16px 36px; display: flex; flex-direction: column; gap: 8px; }
+.sc-scroll::-webkit-scrollbar { width: 3px; }
+.sc-scroll::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
+
+.sc-card {
+  background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r);
+  padding: 14px 16px; cursor: pointer;
+  display: flex; align-items: center; gap: 13px;
+  transition: border-color .18s, background .15s, transform .15s;
+}
+.sc-card:hover { border-color: var(--you); background: var(--s2); transform: translateX(3px); }
+.sc-card:active { transform: translateX(3px) scale(.98); }
+.sc-ico {
+  font-size: 1.4rem; width: 40px; height: 40px; flex-shrink: 0;
+  background: var(--s2); border-radius: var(--rsm);
+  display: flex; align-items: center; justify-content: center;
+}
+.sc-inf { flex: 1; }
+.sc-name { font-size: var(--fs); font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.sc-desc { font-size: var(--fs-xs); color: var(--sub2); line-height: 1.4; font-weight: 400; }
+.sc-arr { color: var(--sub); transition: color .2s; }
+.sc-card:hover .sc-arr { color: var(--you); }
+
+.or-div {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--sub); font-size: var(--fs-xs); letter-spacing: .1em; text-transform: uppercase;
+}
+.or-div::before, .or-div::after { content:''; flex:1; height:1px; background: var(--b1); }
+
+.free-btn {
+  background: transparent; border: 1px dashed var(--b2); border-radius: var(--r);
+  padding: 14px 16px; color: var(--sub2); font-family: 'Syne', sans-serif;
+  font-size: var(--fs); cursor: pointer;
+  transition: border-color .2s, color .2s;
+  text-align: left; display: flex; align-items: center; gap: 10px;
+}
+.free-btn:hover { border-color: var(--you); color: var(--you); }
+
+/* ══════════════════════════════════════════
+   CONVERSATION SCREEN
+══════════════════════════════════════════ */
+#cvScreen { background: var(--bg); }
+
+.cv-topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--b1);
+  background: var(--s1); flex-shrink: 0;
+}
+.cv-meta { flex: 1; min-width: 0; }
+.cv-title {
+  font-size: var(--fs); font-weight: 700; display: flex; align-items: center; gap: 7px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cv-status {
+  font-size: var(--fs-xs); color: var(--sub);
+  letter-spacing: .08em; text-transform: uppercase;
+  margin-top: 2px; display: flex; align-items: center; gap: 5px;
+}
+.pip {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--sub);
+  transition: background .3s; flex-shrink: 0;
+}
+.pip.speaking  { background: var(--you);  animation: blink .5s infinite alternate; }
+.pip.listening { background: var(--them); animation: blink .7s infinite alternate; }
+.pip.thinking  { background: var(--gold); animation: blink .9s infinite alternate; }
+@keyframes blink { from{opacity:1;} to{opacity:.2;} }
+
+/* Toolbar row under topbar */
+.cv-toolbar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--b1);
+  background: var(--s1); flex-shrink: 0;
+  overflow-x: auto; overflow-y: hidden;
+}
+.cv-toolbar::-webkit-scrollbar { display: none; }
+.tbtn {
+  background: var(--s2); border: 1px solid var(--b1); border-radius: var(--rsm);
+  color: var(--sub2); font-family: 'Syne', sans-serif;
+  font-size: var(--fs-xs); padding: 6px 11px; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.tbtn:hover { border-color: var(--you); color: var(--you); }
+.tbtn.red:hover { border-color: var(--red); color: var(--red); }
+.tbtn.gold:hover { border-color: var(--gold); color: var(--gold); }
+
+/* Chat log */
+.chat-log {
+  flex: 1; overflow-y: auto; padding: 16px 15px;
+  display: flex; flex-direction: column; gap: 11px;
+  scroll-behavior: smooth;
+}
+.chat-log::-webkit-scrollbar { width: 3px; }
+.chat-log::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
+
+.msg { display: flex; flex-direction: column; max-width: 88%; animation: mi .2s ease forwards; opacity:0; transform:translateY(6px); }
+@keyframes mi { to{opacity:1;transform:translateY(0);} }
+.msg.you    { align-self: flex-end; align-items: flex-end; }
+.msg.them   { align-self: flex-start; align-items: flex-start; }
+.msg.system { align-self: center; align-items: center; max-width: 100%; }
+.msg-lbl { font-size: var(--fs-xs); letter-spacing:.1em; text-transform:uppercase; color:var(--sub); margin-bottom:3px; padding:0 3px; }
+.msg.you  .msg-lbl { color: var(--you); }
+.msg.them .msg-lbl { color: var(--them); }
+.bubble {
+  padding: 11px 15px; border-radius: var(--r);
+  font-size: var(--fs); font-weight: 400; line-height: 1.55; word-break: break-word;
+}
+.msg.you  .bubble { background:var(--you-d); border:1px solid var(--you-b); border-bottom-right-radius:4px; color:#c0d8ff; }
+.msg.them .bubble { background:var(--them-d); border:1px solid var(--them-b); border-bottom-left-radius:4px; color:#9ff0d4; }
+.msg.system .bubble {
+  background:var(--s1); border:1px solid var(--b1);
+  font-size:var(--fs-xs); color:var(--sub2);
+  padding:6px 14px; border-radius:20px;
+  font-family:'JetBrains Mono',monospace;
+}
+
+/* Listening bubble */
+.lb { background:var(--them-d); border:1px solid var(--them-b); border-radius:var(--r); border-bottom-left-radius:4px; padding:13px 16px; display:flex; align-items:center; gap:5px; }
+.ld { width:7px; height:7px; border-radius:50%; background:var(--them); animation:lda 1.2s infinite; }
+.ld:nth-child(2){animation-delay:.2s;} .ld:nth-child(3){animation-delay:.4s;}
+@keyframes lda{0%,80%,100%{transform:translateY(0);opacity:.4;}40%{transform:translateY(-5px);opacity:1;}}
+
+.empty-cv {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:10px; color:var(--sub); padding:40px; text-align:center;
+}
+.empty-ico { font-size:2.5rem; opacity:.3; margin-bottom:4px; }
+.empty-txt { font-size:var(--fs-sm); line-height:1.7; }
+
+/* ══════════════════════════════════════════
+   BOTTOM ZONE
+══════════════════════════════════════════ */
+.bottom-zone { flex-shrink:0; background:var(--s1); border-top:1px solid var(--b1); }
+
+/* Word prediction strip */
+.pred-strip {
+  display:none; gap:6px; padding:8px 12px 0;
+  overflow-x:auto; overflow-y:hidden;
+}
+.pred-strip.on { display:flex; }
+.pred-strip::-webkit-scrollbar { display:none; }
+.pred-word {
+  background:var(--s2); border:1px solid var(--b1); border-radius:var(--rsm);
+  color:var(--sub2); font-family:'Syne',sans-serif; font-size:var(--fs-sm);
+  padding:5px 11px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  transition:border-color .12s, color .12s;
+}
+.pred-word:hover { border-color:var(--you); color:var(--you); }
+
+/* Thinking skeleton */
+.think-row { display:none; padding:8px 14px 2px; flex-direction:column; gap:4px; }
+.think-row.on { display:flex; }
+.t-bar { height:8px; border-radius:4px; background:linear-gradient(90deg,var(--s2) 25%,var(--b2) 50%,var(--s2) 75%); background-size:200% 100%; animation:shim 1.3s infinite; }
+@keyframes shim{from{background-position:200% 0;}to{background-position:-200% 0;}}
+
+/* Suggestions */
+.sug-strip { display:none; padding:8px 12px 0; flex-direction:column; gap:6px; }
+.sug-strip.on { display:flex; }
+.sug-lbl { font-size:var(--fs-xs); letter-spacing:.12em; text-transform:uppercase; color:var(--gold); display:flex; align-items:center; gap:5px; }
+.sug-lbl::before{content:'✦';font-size:.5rem;}
+.sug-list { display:flex; flex-direction:column; gap:5px; }
+.sug-btn {
+  background:var(--s2); border:1px solid var(--b2); border-radius:var(--rsm);
+  padding:10px 13px; color:var(--text); font-family:'Syne',sans-serif;
+  font-size:var(--fs-sm); font-weight:400; text-align:left; cursor:pointer;
+  display:flex; align-items:center; gap:10px;
+  transition:border-color .12s, background .12s, transform .1s; line-height:1.4;
+}
+.sug-btn:hover { background:var(--s3); border-color:var(--you); transform:translateX(3px); }
+.sug-btn:active { transform:translateX(3px) scale(.98); }
+.sa { color:var(--sub); font-size:var(--fs-xs); margin-left:auto; flex-shrink:0; transition:color .12s; }
+.sug-btn:hover .sa { color:var(--you); }
+
+/* Phrase bank panel */
+.phrase-panel {
+  display:none; max-height:160px; overflow-y:auto;
+  padding:8px 12px 0; flex-direction:column; gap:4px; border-top:1px solid var(--b1);
+}
+.phrase-panel.on { display:flex; }
+.phrase-panel::-webkit-scrollbar{width:3px;}
+.phrase-panel::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+.pp-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+.pp-lbl { font-size:var(--fs-xs); letter-spacing:.12em; text-transform:uppercase; color:var(--sub2); }
+.pp-edit { font-size:var(--fs-xs); color:var(--you); cursor:pointer; background:none;border:none;font-family:'Syne',sans-serif; }
+.phrase-list { display:flex; flex-wrap:wrap; gap:5px; }
+.ph-chip {
+  background:var(--s2); border:1px solid var(--b1); border-radius:var(--rsm);
+  color:var(--sub2); font-family:'Syne',sans-serif; font-size:var(--fs-xs);
+  padding:6px 11px; cursor:pointer; white-space:nowrap;
+  transition:border-color .12s,color .12s,background .12s;
+}
+.ph-chip:hover { border-color:var(--you); color:var(--you); background:var(--you-d); }
+
+/* Input row */
+.input-zone { padding:8px 12px 16px; display:flex; gap:8px; align-items:flex-end; }
+.inp-wrap {
+  flex:1; background:var(--s2); border:1px solid var(--b2);
+  border-radius:var(--r); display:flex; align-items:flex-end;
+  padding:2px 6px 2px 12px; gap:4px; transition:border-color .2s;
+}
+.inp-wrap:focus-within { border-color:var(--you); }
+#msgInput {
+  flex:1; background:none; border:none; outline:none;
+  color:var(--text); font-family:'Syne',sans-serif;
+  font-size:var(--fs); font-weight:400;
+  padding:10px 0; resize:none; max-height:100px; line-height:1.4;
+}
+#msgInput::placeholder { color:var(--sub); }
+.send-btn {
+  background:var(--you); border:none; border-radius:9px;
+  width:36px; height:36px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:.85rem; margin-bottom:3px;
+  transition:background .2s,transform .1s;
+}
+.send-btn:hover { background:#3a7ce8; }
+.send-btn:active { transform:scale(.92); }
+.send-btn:disabled { background:var(--b1); cursor:not-allowed; transform:none; }
+.listen-btn {
+  background:var(--them-d); border:1px solid var(--them-b); border-radius:var(--r);
+  width:46px; height:46px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:1.1rem;
+  transition:background .2s,border-color .2s,transform .1s;
+}
+.listen-btn:hover { background:rgba(45,212,160,.15); border-color:var(--them); }
+.listen-btn.active { background:rgba(45,212,160,.2); border-color:var(--them); animation:ring 1.2s infinite; }
+.listen-btn:disabled { opacity:.3; cursor:not-allowed; animation:none; }
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(45,212,160,.4);}50%{box-shadow:0 0 0 8px rgba(45,212,160,0);}}
+
+/* ══════════════════════════════════════════
+   PROFILE SCREEN
+══════════════════════════════════════════ */
+#pfScreen { background: var(--bg); }
+.pf-scroll { flex:1; overflow-y:auto; padding:22px 18px 40px; display:flex; flex-direction:column; gap:22px; }
+.pf-scroll::-webkit-scrollbar{width:3px;}
+.pf-scroll::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+.pf-title { font-family:'Instrument Serif',serif; font-size:1.7rem; color:var(--text); margin-bottom:5px; }
+.pf-sub { font-size:var(--fs-sm); color:var(--sub2); line-height:1.6; font-weight:400; }
+.sec-lbl { font-size:var(--fs-xs); letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin-bottom:10px; }
+.fsec { display:flex; flex-direction:column; gap:12px; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:var(--fs-sm); color:var(--sub2); font-weight:600; letter-spacing:.03em; }
+.field input, .field textarea, .field select {
+  background:var(--s1); border:1px solid var(--b2); border-radius:var(--rsm);
+  padding:10px 13px; color:var(--text); font-family:'Syne',sans-serif;
+  font-size:var(--fs); font-weight:400; outline:none; transition:border-color .2s; -webkit-appearance:none;
+}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--you);}
+.field input::placeholder,.field textarea::placeholder{color:var(--sub);}
+.field textarea{resize:none;min-height:75px;line-height:1.5;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.save-btn {
+  background:var(--you); border:none; border-radius:var(--r);
+  padding:13px 22px; color:#fff; font-family:'Syne',sans-serif;
+  font-size:var(--fs-sm); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; gap:7px;
+  transition:background .2s,transform .1s;
+}
+.save-btn:hover{background:#3a7ce8;} .save-btn:active{transform:scale(.98);}
+.toast {
+  background:var(--them-d); border:1px solid var(--them-b); border-radius:var(--rsm);
+  padding:9px 14px; font-size:var(--fs-sm); color:var(--them);
+  display:none; align-items:center; gap:7px;
+}
+.toast.show{display:flex;}
+
+/* Phrase editor section */
+.phrase-editor { display:flex; flex-direction:column; gap:8px; }
+.phrase-editor-list { display:flex; flex-direction:column; gap:5px; }
+.phrase-row {
+  display:flex; align-items:center; gap:7px;
+  background:var(--s1); border:1px solid var(--b1); border-radius:var(--rsm); padding:8px 10px;
+}
+.phrase-row input {
+  flex:1; background:none; border:none; outline:none;
+  color:var(--text); font-family:'Syne',sans-serif; font-size:var(--fs-sm);
+  padding:2px 0;
+}
+.phrase-row input::placeholder{color:var(--sub);}
+.ph-del {
+  background:none;border:none;color:var(--sub);font-size:1rem;cursor:pointer;
+  transition:color .15s; padding:2px 4px;
+}
+.ph-del:hover{color:var(--red);}
+.add-phrase-btn {
+  background:transparent; border:1px dashed var(--b2); border-radius:var(--rsm);
+  padding:9px 14px; color:var(--sub2); font-family:'Syne',sans-serif;
+  font-size:var(--fs-sm); cursor:pointer;
+  display:flex;align-items:center;gap:7px;
+  transition:border-color .15s,color .15s;
+}
+.add-phrase-btn:hover{border-color:var(--you);color:var(--you);}
+
+/* ══════════════════════════════════════════
+   SHOW-SCREEN MODAL (flip to other person)
+══════════════════════════════════════════ */
+.show-overlay {
+  display:none; position:fixed; inset:0; background:var(--bg); z-index:200;
+  flex-direction:column; align-items:center; justify-content:center;
+  padding:30px 24px; text-align:center; gap:20px;
+}
+.show-overlay.open{display:flex;}
+.show-msg {
+  font-family:'Instrument Serif',serif;
+  font-size:clamp(1.8rem,7vw,3.2rem);
+  line-height:1.3; color:var(--text); max-width:480px;
+}
+.show-sub { font-size:clamp(0.9rem,4vw,1.2rem); color:var(--sub2); max-width:380px; line-height:1.6; }
+.show-badge {
+  background:var(--s1); border:1px solid var(--b1); border-radius:var(--r);
+  padding:14px 24px; font-size:clamp(0.85rem,3.5vw,1.1rem); color:var(--sub2); max-width:420px; text-align:left; line-height:1.7;
+}
+.show-badge strong { color:var(--text); }
+.close-show {
+  background:var(--s1); border:1px solid var(--b2); border-radius:var(--r);
+  padding:13px 28px; color:var(--text); font-family:'Syne',sans-serif;
+  font-size:var(--fs-sm); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  cursor:pointer; transition:border-color .2s; margin-top:8px;
+}
+.close-show:hover{border-color:var(--you);color:var(--you);}
+
+/* ══════════════════════════════════════════
+   SOS OVERLAY
+══════════════════════════════════════════ */
+.sos-overlay {
+  display:none; position:fixed; inset:0; background:#120000; z-index:300;
+  flex-direction:column; align-items:center; justify-content:center;
+  padding:28px; gap:18px; text-align:center;
+}
+.sos-overlay.open{display:flex;}
+.sos-header {
+  font-size:clamp(2.5rem,12vw,5rem); font-weight:800; color:var(--red);
+  letter-spacing:0.05em; line-height:1;
+  animation: sosPulse 1.2s infinite alternate;
+}
+@keyframes sosPulse { from{opacity:1;} to{opacity:.6;} }
+.sos-card {
+  background:#1a0000; border:2px solid rgba(242,107,107,.4); border-radius:var(--r);
+  padding:22px 26px; width:100%; max-width:440px; text-align:left; line-height:1.9;
+}
+.sos-row { display:flex; gap:12px; align-items:flex-start; font-size:clamp(0.9rem,4vw,1.1rem); }
+.sos-key { color:var(--sub2); min-width:110px; font-size:clamp(0.75rem,3vw,0.85rem); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+.sos-val { color:var(--text); font-weight:600; }
+.sos-note { font-size:clamp(0.8rem,3.5vw,0.95rem); color:var(--sub2); max-width:400px; line-height:1.6; }
+.close-sos {
+  background:var(--red-d); border:1px solid rgba(242,107,107,.4); border-radius:var(--r);
+  padding:13px 30px; color:var(--red); font-family:'Syne',sans-serif;
+  font-size:var(--fs-sm); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  cursor:pointer; transition:background .2s; margin-top:6px;
+}
+.close-sos:hover{background:rgba(242,107,107,.12);}
+
+/* ══════════════════════════════════════════
+   PHRASE EDIT MODAL
+══════════════════════════════════════════ */
+.modal-ov {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:150;
+  align-items:flex-end; justify-content:center;
+}
+.modal-ov.open{display:flex;}
+.modal-sh {
+  background:var(--s1); border:1px solid var(--b1); border-radius:20px 20px 0 0;
+  width:100%; max-width:520px; padding:22px 20px 36px;
+  animation:sup .25s ease;
+}
+@keyframes sup{from{transform:translateY(100%);}to{transform:translateY(0);}}
+.modal-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.modal-ttl { font-size:var(--fs); font-weight:700; }
+.modal-x { background:none;border:none;color:var(--sub2);font-size:1.2rem;cursor:pointer; }
+
+/* Accessibility */
+@media(min-width:560px){
+  #scScreen,#cvScreen,#pfScreen{max-width:520px;margin:0 auto;border-left:1px solid var(--b1);border-right:1px solid var(--b1);}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SCENARIO SCREEN ══════════════ -->
+<div id="scScreen" class="screen active">
+  <div class="topbar">
+    <div class="wordmark">VoiceBridge</div>
+    <div class="tbar-sp"></div>
+    <div class="badge" id="topBadge">?</div>
+    <button class="ibtn" id="largeTextBtn" onclick="toggleLargeText()" title="Accessibility: Large Text">Aa</button>
+    <button class="ibtn" onclick="goProfile()" title="Profile & Settings">⚙️</button>
+  </div>
+  <div class="sc-hero">
+    <div class="sc-title">What's the<br><em style="font-style:italic;font-family:'Instrument Serif',serif">situation?</em></div>
+    <div class="sc-sub">Choose a scenario or start free. Your words speak aloud — their reply becomes text. AI suggests your next move.</div>
+  </div>
+  <div class="sc-scroll" id="scList"></div>
+</div>
+
+
+<!-- ══════════════ CONVERSATION SCREEN ══════════════ -->
+<div id="cvScreen" class="screen">
+  <div class="cv-topbar">
+    <button class="ibtn" onclick="goBack()">←</button>
+    <div class="cv-meta">
+      <div class="cv-title"><span id="cvIco">💬</span><span id="cvTitle">Conversation</span></div>
+      <div class="cv-status"><div class="pip" id="pip"></div><span id="pipLbl">ready</span></div>
+    </div>
+    <button class="ibtn" onclick="goProfile()" title="Profile">⚙️</button>
+  </div>
+
+  <!-- Quick action toolbar -->
+  <div class="cv-toolbar">
+    <button class="tbtn" onclick="openShowScreen()">🃏 Show Screen</button>
+    <button class="tbtn" onclick="togglePhrasePanel()">⚡ Phrases</button>
+    <button class="tbtn gold" onclick="openSOS()">🆘 SOS</button>
+    <button class="tbtn" onclick="exportConv()">📋 Export</button>
+    <button class="tbtn" id="largeTextBtn2" onclick="toggleLargeText()">Aa</button>
+  </div>
+
+  <div class="chat-log" id="chatLog">
+    <div class="empty-cv" id="emptyState">
+      <div class="empty-ico">💬</div>
+      <div class="empty-txt">Type a message or tap a starter phrase.<br>It will be spoken aloud to them.</div>
+    </div>
+  </div>
+
+  <div class="bottom-zone">
+    <div class="think-row" id="thinkRow">
+      <div class="t-bar" style="width:70%"></div>
+      <div class="t-bar" style="width:48%"></div>
+    </div>
+
+    <div class="sug-strip" id="sugStrip">
+      <div class="sug-lbl">Suggested replies</div>
+      <div class="sug-list" id="sugList"></div>
+    </div>
+
+    <!-- Phrase bank panel (inline) -->
+    <div class="phrase-panel" id="phrasePanel">
+      <div class="pp-hdr">
+        <div class="pp-lbl">Saved Phrases</div>
+        <button class="pp-edit" onclick="goProfile()">Edit →</button>
+      </div>
+      <div class="phrase-list" id="phrasePanelList"></div>
+    </div>
+
+    <!-- Word prediction -->
+    <div class="pred-strip" id="predStrip"></div>
+
+    <div class="input-zone">
+      <div class="inp-wrap">
+        <textarea id="msgInput" placeholder="Type your message…" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">▶</button>
+      </div>
+      <button class="listen-btn" id="listenBtn" onclick="toggleListen()">🎙</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════ PROFILE SCREEN ══════════════ -->
+<div id="pfScreen" class="screen">
+  <div class="topbar">
+    <button class="ibtn" onclick="goBackFromProfile()">←</button>
+    <div class="wordmark" style="margin-left:2px">Profile</div>
+    <div class="tbar-sp"></div>
+  </div>
+  <div class="pf-scroll">
+    <div>
+      <div class="pf-title">Your<br><em style="font-style:italic;font-family:'Instrument Serif',serif">details</em></div>
+      <div class="pf-sub">Helps the AI give smarter, personalised replies during conversations.</div>
+    </div>
+
+    <div class="fsec">
+      <div class="sec-lbl">Personal</div>
+      <div class="field-row">
+        <div class="field"><label>First Name</label><input type="text" id="pFN" placeholder="e.g. Marie"/></div>
+        <div class="field"><label>Surname</label><input type="text" id="pSN" placeholder="e.g. Dubois"/></div>
+      </div>
+      <div class="field"><label>Date of Birth</label><input type="date" id="pDOB"/></div>
+    </div>
+
+    <div class="fsec">
+      <div class="sec-lbl">Emergency Contact</div>
+      <div class="field"><label>Contact Name</label><input type="text" id="pECN" placeholder="e.g. Jean Dubois"/></div>
+      <div class="field"><label>Contact Phone</label><input type="tel" id="pECP" placeholder="e.g. +33 6 12 34 56 78"/></div>
+    </div>
+
+    <div class="fsec">
+      <div class="sec-lbl">Medical Notes</div>
+      <div class="field"><label>Shown to others in SOS mode</label><textarea id="pMED" placeholder="e.g. Profoundly deaf since birth. Allergic to penicillin."></textarea></div>
+    </div>
+
+    <div class="fsec">
+      <div class="sec-lbl">Quick Phrase Bank</div>
+      <div class="phrase-editor">
+        <div class="phrase-editor-list" id="phraseEditorList"></div>
+        <button class="add-phrase-btn" onclick="addPhraseRow()">＋ Add phrase</button>
+      </div>
+    </div>
+
+    <div class="toast" id="saveToast">✓ Profile saved</div>
+    <button class="save-btn" onclick="saveProfile()">Save Everything</button>
+  </div>
+</div>
+
+
+<!-- ══════════════ SHOW SCREEN OVERLAY ══════════════ -->
+<div class="show-overlay" id="showOverlay">
+  <div class="show-msg">Please read my screen.</div>
+  <div class="show-sub">I am deaf or non-speaking. I communicate using this app. Please speak clearly — I will show you my reply.</div>
+  <div class="show-badge" id="showBadge" style="display:none"></div>
+  <button class="close-show" onclick="closeShowScreen()">← Back to conversation</button>
+</div>
+
+
+<!-- ══════════════ SOS OVERLAY ══════════════ -->
+<div class="sos-overlay" id="sosOverlay">
+  <div class="sos-header">⚠ SOS</div>
+  <div class="sos-card" id="sosCard"></div>
+  <div class="sos-note">Show this screen to emergency services or a bystander.</div>
+  <button class="close-sos" onclick="closeSOS()">← Close SOS</button>
+</div>
+
+
+<!-- ══════════════ PHRASE MODAL (from profile edit link) ══════════════ -->
+<div class="modal-ov" id="phraseModal" onclick="closePhraseModal(event)">
+  <div class="modal-sh">
+    <div class="modal-hdr">
+      <div class="modal-ttl">Edit Phrases</div>
+      <button class="modal-x" onclick="closePhraseModal()">✕</button>
+    </div>
+    <!-- handled inline in profile -->
+  </div>
+</div>
+
+
+<script>
+// ══════════════════════════════════════════════════════
+//  SCENARIOS
+// ══════════════════════════════════════════════════════
+const SCENARIOS = [
+  { id:'shop',       icon:'🛒', name:'Shop / Checkout',       desc:'Buying something, prices, availability',          openers:['How much does this cost?','Do you have this in another size?','I would like to buy this please.'] },
+  { id:'doctor',     icon:'🏥', name:'Doctor / Pharmacy',     desc:'Appointments, prescriptions, symptoms',           openers:['I have an appointment.','I am here to collect a prescription.','I have pain here — can you help?'] },
+  { id:'restaurant', icon:'🍽', name:'Restaurant / Café',     desc:'Ordering, menu questions, allergies',             openers:['Can I see the menu please?','I have a nut allergy.','I would like to order please.'] },
+  { id:'transport',  icon:'🚌', name:'Transport / Directions',desc:'Directions, tickets, public transit',             openers:['Where is the nearest bus stop?','One ticket to the city centre please.','Which platform for the train?'] },
+  { id:'emergency',  icon:'🚨', name:'Emergency / Urgent',    desc:'Quickly communicating urgent needs',              openers:['I need help urgently.','Please call an ambulance.','I am deaf — please read my screen carefully.'] },
+  { id:'social',     icon:'👋', name:'Meeting Someone',       desc:'Introductions, small talk, social situations',    openers:['Hello — I am deaf and use this app to communicate.','Nice to meet you!','Could you speak clearly into the phone?'] },
+  { id:'work',       icon:'💼', name:'Work / Office',         desc:'Meetings, colleagues, professional settings',     openers:['I have a meeting scheduled here.','Could you speak into my phone please?','I would like to discuss something with you.'] },
+  { id:'bank',       icon:'🏦', name:'Bank / Post Office',    desc:'Transactions, forms, account queries',            openers:['I would like to speak with someone about my account.','Can I fill in a form instead?','I need to make a withdrawal.'] },
+  { id:'hotel',      icon:'🏨', name:'Hotel / Accommodation', desc:'Check-in, requests, room issues',                 openers:['I have a reservation under my name.','Could I have a room on a lower floor?','There is a problem with my room.'] },
+];
+
+const DEFAULT_PHRASES = [
+  'Could you repeat that please?',
+  'Please speak more slowly.',
+  'I understand, thank you.',
+  'One moment please.',
+  'I am deaf — please read my screen.',
+  'Please write it down if possible.',
+];
+
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+let currentScenario = null;
+let conversation    = [];
+let profile         = {};
+let phrases         = [...DEFAULT_PHRASES];
+let isListening     = false;
+let recognition     = null;
+let isBusy          = false;
+let lastScreen      = 'scScreen';
+let largeText       = false;
+
+const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
+
+// Common English words for prediction
+const COMMON_WORDS = ['I','the','a','is','are','was','were','have','has','had','can','could','would','will','please','thank','sorry','need','want','help','yes','no','okay','hello','goodbye','understand','know','see','go','come','do','does','say','tell','ask','give','take','make','think','feel','like','here','there','today','now','later','more','much','very','also','just','only','but','and','or','not'];
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  loadProfile();
+  buildScenarioList();
+  initVoices();
+  initTextarea();
+});
+
+// ══════════════════════════════════════════════════════
+//  PROFILE
+// ══════════════════════════════════════════════════════
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem('vb_profile_v3');
+    if (raw) { profile = JSON.parse(raw); }
+    const phr = localStorage.getItem('vb_phrases_v3');
+    if (phr) phrases = JSON.parse(phr);
+  } catch(e) {}
+  populateProfileForm();
+  updateBadge();
+  buildPhrasePanelList();
+}
+
+function saveProfile() {
+  profile = {
+    firstName: v('pFN'), surname: v('pSN'), dob: v('pDOB'),
+    ecName: v('pECN'), ecPhone: v('pECP'), medical: v('pMED'),
+  };
+  // gather phrases from editor
+  phrases = [];
+  document.querySelectorAll('.phrase-row input').forEach(inp => {
+    const t = inp.value.trim();
+    if (t) phrases.push(t);
+  });
+
+  localStorage.setItem('vb_profile_v3', JSON.stringify(profile));
+  localStorage.setItem('vb_phrases_v3', JSON.stringify(phrases));
+  updateBadge();
+  buildPhrasePanelList();
+
+  const toast = document.getElementById('saveToast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function populateProfileForm() {
+  set('pFN', profile.firstName || ''); set('pSN', profile.surname || '');
+  set('pDOB', profile.dob || ''); set('pECN', profile.ecName || '');
+  set('pECP', profile.ecPhone || ''); set('pMED', profile.medical || '');
+  buildPhraseEditorList();
+}
+
+function buildPhraseEditorList() {
+  const el = document.getElementById('phraseEditorList');
+  el.innerHTML = '';
+  phrases.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'phrase-row';
+    row.innerHTML = `<input type="text" value="${esc(p)}" placeholder="Enter phrase…"/>
+      <button class="ph-del" onclick="this.parentElement.remove()">✕</button>`;
+    el.appendChild(row);
+  });
+}
+
+function addPhraseRow() {
+  const el = document.getElementById('phraseEditorList');
+  const row = document.createElement('div');
+  row.className = 'phrase-row';
+  row.innerHTML = `<input type="text" placeholder="Enter phrase…"/>
+    <button class="ph-del" onclick="this.parentElement.remove()">✕</button>`;
+  el.appendChild(row);
+  row.querySelector('input').focus();
+}
+
+function buildPhrasePanelList() {
+  const el = document.getElementById('phrasePanelList');
+  el.innerHTML = '';
+  phrases.forEach(p => {
+    const chip = document.createElement('button');
+    chip.className = 'ph-chip';
+    chip.textContent = p;
+    chip.addEventListener('click', () => {
+      togglePhrasePanel(false);
+      speakAndLog(p);
+    });
+    el.appendChild(chip);
+  });
+}
+
+function updateBadge() {
+  const badge = document.getElementById('topBadge');
+  badge.textContent = profile.firstName
+    ? (profile.firstName[0] + (profile.surname?.[0] || '')).toUpperCase()
+    : '?';
+}
+
+function profileCtx() {
+  const parts = [];
+  if (profile.firstName) parts.push(`User: ${profile.firstName} ${profile.surname || ''}`.trim());
+  if (profile.dob) {
+    const age = Math.floor((Date.now() - new Date(profile.dob)) / 31557600000);
+    if (age > 0 && age < 120) parts.push(`Age: ${age}`);
+  }
+  if (profile.medical) parts.push(`Medical: ${profile.medical}`);
+  return parts.join('. ');
+}
+
+// ══════════════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function getCurrentScreen() {
+  return document.querySelector('.screen.active')?.id || 'scScreen';
+}
+function goBack() { stopListening(); showScreen('scScreen'); }
+function goProfile() { lastScreen = getCurrentScreen(); populateProfileForm(); showScreen('pfScreen'); }
+function goBackFromProfile() { showScreen(lastScreen || 'scScreen'); }
+
+// ══════════════════════════════════════════════════════
+//  SCENARIO LIST
+// ══════════════════════════════════════════════════════
+function buildScenarioList() {
+  const list = document.getElementById('scList');
+  list.innerHTML = '';
+  SCENARIOS.forEach(sc => {
+    const card = document.createElement('div');
+    card.className = 'sc-card';
+    card.innerHTML = `
+      <div class="sc-ico">${sc.icon}</div>
+      <div class="sc-inf"><div class="sc-name">${sc.name}</div><div class="sc-desc">${sc.desc}</div></div>
+      <div class="sc-arr">›</div>`;
+    card.addEventListener('click', () => startScenario(sc));
+    list.appendChild(card);
+  });
+  const d = document.createElement('div'); d.className = 'or-div'; d.textContent = 'or'; list.appendChild(d);
+  const fb = document.createElement('button'); fb.className = 'free-btn';
+  fb.innerHTML = `<span style="font-size:1.2rem">✏️</span> Start a free conversation`;
+  fb.addEventListener('click', () => startScenario({ id:'free', icon:'💬', name:'Free Conversation', openers:[] }));
+  list.appendChild(fb);
+}
+
+// ══════════════════════════════════════════════════════
+//  START SCENARIO
+// ══════════════════════════════════════════════════════
+function startScenario(sc) {
+  currentScenario = sc;
+  conversation = [];
+  isBusy = false;
+  set2('cvIco', sc.icon); set2('cvTitle', sc.name);
+  document.getElementById('chatLog').innerHTML = `
+    <div class="empty-cv" id="emptyState">
+      <div class="empty-ico">${sc.icon}</div>
+      <div class="empty-txt">Type or tap a starter phrase.<br>It will be spoken aloud.</div>
+    </div>`;
+  hideSuggestions(); hidePhrasePanel(); setStatus('ready');
+  if (sc.openers?.length) { addSystemMsg(`Scenario: ${sc.name}`); renderOpeners(sc.openers); }
+  showScreen('cvScreen');
+}
+
+// ══════════════════════════════════════════════════════
+//  CHAT RENDER
+// ══════════════════════════════════════════════════════
+function addMsg(role, text) {
+  document.getElementById('emptyState')?.remove();
+  conversation.push({ role, text });
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  const lbls = { you:'🔊 You (spoken aloud)', them:'👤 Them (heard)' };
+  el.innerHTML = role !== 'system'
+    ? `<div class="msg-lbl">${lbls[role]}</div><div class="bubble">${esc(text)}</div>`
+    : `<div class="bubble">${esc(text)}</div>`;
+  log.appendChild(el);
+  scrollLog();
+}
+function addSystemMsg(t) {
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div'); el.className='msg system';
+  el.innerHTML=`<div class="bubble">${esc(t)}</div>`;
+  log.appendChild(el); scrollLog();
+}
+function renderOpeners(openers) {
+  const log = document.getElementById('chatLog');
+  const wrap = document.createElement('div');
+  wrap.style.cssText='display:flex;flex-direction:column;gap:5px;margin-top:2px;';
+  openers.forEach(o => {
+    const btn = document.createElement('button'); btn.className='sug-btn';
+    btn.innerHTML=`${esc(o)}<span class="sa">›</span>`;
+    btn.addEventListener('click', () => { wrap.remove(); speakAndLog(o); });
+    wrap.appendChild(btn);
+  });
+  log.appendChild(wrap); scrollLog();
+}
+function renderSuggestions(list) {
+  const ul = document.getElementById('sugList'); ul.innerHTML='';
+  list.forEach(s => {
+    const btn = document.createElement('button'); btn.className='sug-btn';
+    btn.innerHTML=`${esc(s)}<span class="sa">›</span>`;
+    btn.addEventListener('click', () => { hideSuggestions(); speakAndLog(s); });
+    ul.appendChild(btn);
+  });
+  document.getElementById('sugStrip').classList.add('on');
+  scrollLog();
+}
+function hideSuggestions() {
+  document.getElementById('sugStrip').classList.remove('on');
+  document.getElementById('sugList').innerHTML='';
+}
+function showListeningBubble() {
+  document.getElementById('emptyState')?.remove();
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div'); el.className='msg them'; el.id='listenInd';
+  el.innerHTML=`<div class="msg-lbl">👤 Them</div><div class="lb"><div class="ld"></div><div class="ld"></div><div class="ld"></div></div>`;
+  log.appendChild(el); scrollLog();
+}
+function removeListeningBubble() { document.getElementById('listenInd')?.remove(); }
+function showThinking() { document.getElementById('thinkRow').classList.add('on'); }
+function hideThinking()  { document.getElementById('thinkRow').classList.remove('on'); }
+function scrollLog() { const l=document.getElementById('chatLog'); setTimeout(()=>l.scrollTo({top:l.scrollHeight,behavior:'smooth'}),50); }
+
+// ══════════════════════════════════════════════════════
+//  PHRASE PANEL TOGGLE
+// ══════════════════════════════════════════════════════
+function togglePhrasePanel(forceState) {
+  const panel = document.getElementById('phrasePanel');
+  const state = forceState !== undefined ? forceState : !panel.classList.contains('on');
+  panel.classList.toggle('on', state);
+}
+function hidePhrasePanel() { document.getElementById('phrasePanel').classList.remove('on'); }
+
+// ══════════════════════════════════════════════════════
+//  WORD PREDICTION
+// ══════════════════════════════════════════════════════
+function updatePredictions(val) {
+  const strip = document.getElementById('predStrip');
+  const words = val.split(/\s+/);
+  const last = words[words.length - 1].toLowerCase();
+  if (!last || val.endsWith(' ')) { strip.classList.remove('on'); return; }
+  const matches = COMMON_WORDS.filter(w => w.toLowerCase().startsWith(last) && w.toLowerCase() !== last).slice(0, 4);
+  if (!matches.length) { strip.classList.remove('on'); return; }
+  strip.innerHTML = '';
+  matches.forEach(w => {
+    const btn = document.createElement('button'); btn.className='pred-word'; btn.textContent=w;
+    btn.addEventListener('click', () => {
+      const inp = document.getElementById('msgInput');
+      const parts = inp.value.split(/\s+/);
+      parts[parts.length-1] = w;
+      inp.value = parts.join(' ') + ' ';
+      inp.focus(); inp.dispatchEvent(new Event('input'));
+    });
+    strip.appendChild(btn);
+  });
+  strip.classList.add('on');
+}
+
+// ══════════════════════════════════════════════════════
+//  SEND + SPEAK
+// ══════════════════════════════════════════════════════
+async function sendMessage() {
+  const inp = document.getElementById('msgInput');
+  const text = inp.value.trim();
+  if (!text || isBusy) return;
+  inp.value=''; inp.style.height='auto';
+  document.getElementById('predStrip').classList.remove('on');
+  hideSuggestions(); hidePhrasePanel();
+  await speakAndLog(text);
+}
+
+async function speakAndLog(text) {
+  if (isBusy) return;
+  isBusy = true;
+  hideSuggestions();
+  addMsg('you', text);
+  setStatus('speaking','🔊 Speaking aloud…');
+  await speakTTS(text);
+  setStatus('listening','🎙 Listening for reply…');
+  startListeningAuto();
+}
+
+// ══════════════════════════════════════════════════════
+//  TTS — French male voice
+// ══════════════════════════════════════════════════════
+function initVoices() {
+  const set = () => { window.speechSynthesis.getVoices(); };
+  set(); window.speechSynthesis.onvoiceschanged = set;
+}
+
+function pickVoice() {
+  const all = window.speechSynthesis.getVoices();
+  const maleFr = ['thomas','nicolas','pierre','jean','henri','paul','felix','laurent'];
+  for (const n of maleFr) {
+    const m = all.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes(n));
+    if (m) return m;
+  }
+  const anyFr = all.find(v => v.lang.startsWith('fr'));
+  if (anyFr) return anyFr;
+  const deepEn = ['daniel','james','arthur','oliver','gordon'];
+  for (const n of deepEn) {
+    const m = all.find(v => v.name.toLowerCase().includes(n));
+    if (m) return m;
+  }
+  return all[0] || null;
+}
+
+function speakTTS(text) {
+  return new Promise(resolve => {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    const voice = pickVoice();
+    if (voice) utt.voice = voice;
+    utt.rate = 0.91; utt.pitch = 0.86; utt.volume = 1;
+    utt.onend = resolve; utt.onerror = resolve;
+    window.speechSynthesis.speak(utt);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  SPEECH RECOGNITION
+// ══════════════════════════════════════════════════════
+function toggleListen() {
+  if (isListening) { stopListening(); return; }
+  hideSuggestions(); startListeningAuto();
+}
+
+function startListeningAuto() {
+  if (!checkSR()) { isBusy=false; setStatus('ready'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('listenBtn').classList.add('active');
+    setStatus('listening','🎙 Listening…'); showListeningBubble();
+  };
+  recognition.onresult = async (e) => {
+    const t = e.results[0][0].transcript.trim();
+    stopListening(); removeListeningBubble();
+    addMsg('them', t);
+    await getAISuggestions(t);
+  };
+  recognition.onerror = (e) => {
+    stopListening(); removeListeningBubble();
+    if (e.error!=='no-speech'&&e.error!=='aborted') addSystemMsg('Could not hear clearly. Tap 🎙 to try again.');
+    isBusy=false; setStatus('ready');
+  };
+  recognition.onend = () => { isListening=false; document.getElementById('listenBtn').classList.remove('active'); };
+  recognition.start();
+}
+
+function stopListening() {
+  try{recognition?.stop();}catch(e){}
+  recognition=null; isListening=false;
+  document.getElementById('listenBtn').classList.remove('active');
+  removeListeningBubble();
+}
+function checkSR() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    addSystemMsg('Speech recognition not supported. Please use Chrome or Edge.');
+    return false;
+  }
+  return true;
+}
+
+// ══════════════════════════════════════════════════════
+//  AI SUGGESTIONS — context-aware
+// ══════════════════════════════════════════════════════
+async function getAISuggestions(theirMsg) {
+  setStatus('thinking','✦ Thinking…'); showThinking();
+
+  const history = conversation.slice(-8)
+    .map(m => `${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+
+  const userCtx = profileCtx();
+  const scCtx = currentScenario?.name || 'General conversation';
+
+  const prompt = `You are a real-time communication assistant for a deaf/non-speaking person.
+${userCtx ? `About the user: ${userCtx}\n` : ''}Scenario: ${scCtx}
+
+Conversation history:
+${history}
+
+The other person just said: "${theirMsg}"
+
+Generate exactly 3 reply suggestions for the deaf person. Each must:
+1. Directly respond to what was just said: "${theirMsg}"
+2. Be natural and conversational (not robotic)
+3. Be under 18 words
+4. Vary in approach: one should agree/confirm, one should ask for more info, one should be practical/action-oriented
+5. Be appropriate for: ${scCtx}
+
+Return ONLY a raw JSON array of 3 strings. No markdown. No explanation.`;
+
+  try {
+    const res = await fetch(CLAUDE_API, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, messages:[{role:'user',content:prompt}] })
+    });
+    const data = await res.json();
+    const raw = data.content?.[0]?.text || '[]';
+    let sugs;
+    try { sugs = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch { sugs = fallbackSugs(theirMsg); }
+    hideThinking(); renderSuggestions(sugs.slice(0,3));
+    setStatus('ready'); isBusy=false;
+  } catch(err) {
+    hideThinking(); renderSuggestions(fallbackSugs(theirMsg));
+    setStatus('ready'); isBusy=false;
+  }
+}
+
+function fallbackSugs(last) {
+  const l = last.toLowerCase();
+  if (l.includes('?')) return ['Yes, that is correct.','No, let me explain further.','Could you repeat that please?'];
+  if (l.includes('sorry')||l.includes('apologise')) return ['No worries at all.','That is okay, thank you.','Please do not worry about it.'];
+  return ['I understand, thank you.','Could you clarify that for me?','One moment please.'];
+}
+
+// ══════════════════════════════════════════════════════
+//  STATUS
+// ══════════════════════════════════════════════════════
+function setStatus(type, label) {
+  const pip=document.getElementById('pip'); const lbl=document.getElementById('pipLbl');
+  pip.className='pip'+(type&&type!=='ready'?` ${type}`:'');
+  lbl.textContent = label||type;
+  document.getElementById('listenBtn').disabled = (type==='speaking'||type==='thinking');
+  document.getElementById('sendBtn').disabled   = (type==='speaking'||type==='listening'||type==='thinking');
+}
+
+// ══════════════════════════════════════════════════════
+//  SHOW SCREEN (flip to other person)
+// ══════════════════════════════════════════════════════
+function openShowScreen() {
+  const badge = document.getElementById('showBadge');
+  if (profile.firstName) {
+    badge.style.display='block';
+    badge.innerHTML = `
+      <strong>Name:</strong> ${esc(profile.firstName)} ${esc(profile.surname||'')}<br>
+      ${profile.dob?`<strong>DOB:</strong> ${profile.dob}<br>`:''}
+      ${profile.medical?`<strong>Notes:</strong> ${esc(profile.medical)}`:''}
+    `;
+  } else {
+    badge.style.display='none';
+  }
+  document.getElementById('showOverlay').classList.add('open');
+}
+function closeShowScreen() { document.getElementById('showOverlay').classList.remove('open'); }
+
+// ══════════════════════════════════════════════════════
+//  SOS
+// ══════════════════════════════════════════════════════
+function openSOS() {
+  const card = document.getElementById('sosCard');
+  const rows = [];
+  if (profile.firstName) rows.push({ k:'Name', v:`${profile.firstName} ${profile.surname||''}`.trim() });
+  if (profile.dob) rows.push({ k:'Date of Birth', v: profile.dob });
+  if (profile.ecName) rows.push({ k:'Emergency Contact', v: profile.ecName });
+  if (profile.ecPhone) rows.push({ k:'Contact Phone', v: profile.ecPhone });
+  if (profile.medical) rows.push({ k:'Medical Notes', v: profile.medical });
+  if (!rows.length) rows.push({ k:'Note', v:'No profile information saved. Go to ⚙️ Profile to add details.' });
+
+  card.innerHTML = rows.map(r =>
+    `<div class="sos-row"><div class="sos-key">${r.k}</div><div class="sos-val">${esc(r.v)}</div></div>`
+  ).join('');
+  document.getElementById('sosOverlay').classList.add('open');
+}
+function closeSOS() { document.getElementById('sosOverlay').classList.remove('open'); }
+
+// ══════════════════════════════════════════════════════
+//  EXPORT CONVERSATION
+// ══════════════════════════════════════════════════════
+function exportConv() {
+  if (!conversation.length) { addSystemMsg('No conversation to export yet.'); return; }
+  const lines = conversation.map(m => `[${m.role.toUpperCase()}] ${m.text}`).join('\n');
+  const header = `VoiceBridge Conversation Export\nScenario: ${currentScenario?.name||'Free'}\nDate: ${new Date().toLocaleDateString()}\n${'─'.repeat(40)}\n`;
+  const full = header + lines;
+  try {
+    navigator.clipboard.writeText(full);
+    addSystemMsg('✓ Conversation copied to clipboard.');
+  } catch {
+    // Fallback: show in alert
+    prompt('Copy this conversation:', full);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  LARGE TEXT TOGGLE
+// ══════════════════════════════════════════════════════
+function toggleLargeText() {
+  largeText = !largeText;
+  document.body.classList.toggle('large-text', largeText);
+  const btns = document.querySelectorAll('#largeTextBtn, #largeTextBtn2');
+  btns.forEach(b => b.classList.toggle('on', largeText));
+}
+
+// ══════════════════════════════════════════════════════
+//  TEXTAREA AUTO-RESIZE + PREDICTION
+// ══════════════════════════════════════════════════════
+function initTextarea() {
+  const ta = document.getElementById('msgInput');
+  ta.addEventListener('input', () => {
+    ta.style.height='auto';
+    ta.style.height=Math.min(ta.scrollHeight,100)+'px';
+    updatePredictions(ta.value);
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════════════
+function v(id){ return document.getElementById(id)?.value||''; }
+function set(id,val){ const el=document.getElementById(id); if(el) el.value=val; }
+function set2(id,val){ const el=document.getElementById(id); if(el) el.textContent=val; }
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function closePhraseModal(e){ if(!e||e.target===document.getElementById('phraseModal')) document.getElementById('phraseModal').classList.remove('open'); }
+</script>
+</body>
+</html>
