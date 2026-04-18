@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>VoiceBridge — Communication Aid</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d0f14;
+  --surface: #13161e;
+  --surface2: #1a1e2a;
+  --border: #252933;
+  --border2: #2e3445;
+  --text: #e8eaf0;
+  --sub: #6b7280;
+  --sub2: #9ca3af;
+  --you: #3b82f6;
+  --you-bg: #1a2744;
+  --them: #10b981;
+  --them-bg: #0d2420;
+  --accent: #f59e0b;
+  --accent-bg: #2a1f0a;
+  --danger: #ef4444;
+  --suggest-bg: #1c1f2e;
+  --suggest-hover: #252a3d;
+  --suggest-border: #2d3350;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* ── SCREEN MANAGER ── */
+.screen { display: none; flex-direction: column; height: 100vh; }
+.screen.active { display: flex; }
+
+/* ══════════════════════════════
+   SCREEN 1: SCENARIO PICKER
+══════════════════════════════ */
+#scenarioScreen {
+  padding: 0;
+  background: var(--bg);
+}
+
+.scenario-header {
+  padding: 48px 28px 32px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-wordmark {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--you);
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-wordmark::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--you);
+  box-shadow: 0 0 10px var(--you);
+}
+
+.scenario-headline {
+  font-family: 'Instrument Serif', serif;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 400;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.scenario-sub {
+  font-size: 0.78rem;
+  color: var(--sub2);
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+.scenario-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scenario-scroll::-webkit-scrollbar { width: 3px; }
+.scenario-scroll::-webkit-scrollbar-track { background: transparent; }
+.scenario-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.scenario-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.scenario-card:hover, .scenario-card:active {
+  border-color: var(--you);
+  background: var(--surface2);
+  transform: translateX(4px);
+}
+
+.scenario-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+}
+
+.scenario-info { flex: 1; }
+
+.scenario-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.scenario-desc {
+  font-size: 0.73rem;
+  color: var(--sub2);
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.scenario-arrow {
+  color: var(--sub);
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.scenario-card:hover .scenario-arrow { color: var(--you); }
+
+.or-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--sub);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 0;
+}
+
+.or-divider::before, .or-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.free-start-btn {
+  background: transparent;
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  color: var(--sub2);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.free-start-btn:hover { border-color: var(--you); color: var(--you); }
+
+
+/* ══════════════════════════════
+   SCREEN 2: CONVERSATION
+══════════════════════════════ */
+#convScreen { background: var(--bg); }
+
+/* Top bar */
+.conv-topbar {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.back-btn {
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--sub2); font-size: 1rem; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+.back-btn:hover { border-color: var(--text); color: var(--text); }
+
+.conv-info { flex: 1; }
+.conv-scenario-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conv-scenario-icon { font-size: 1rem; }
+
+.conv-status {
+  font-size: 0.65rem;
+  color: var(--sub);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-pip {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--sub);
+  transition: background 0.3s;
+}
+.status-pip.listening { background: var(--them); animation: blink 0.7s infinite alternate; }
+.status-pip.speaking { background: var(--you); animation: blink 0.5s infinite alternate; }
+.status-pip.thinking { background: var(--accent); animation: blink 0.9s infinite alternate; }
+
+@keyframes blink { from { opacity: 1; } to { opacity: 0.2; } }
+
+.tts-voice-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--sub2);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.tts-voice-btn:hover { border-color: var(--you); color: var(--you); }
+
+/* Chat log */
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-behavior: smooth;
+}
+
+.chat-log::-webkit-scrollbar { width: 3px; }
+.chat-log::-webkit-scrollbar-track { background: transparent; }
+.chat-log::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Message bubbles */
+.msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+  animation: msgIn 0.25s ease forwards;
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@keyframes msgIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg.you { align-self: flex-end; align-items: flex-end; }
+.msg.them { align-self: flex-start; align-items: flex-start; }
+.msg.system { align-self: center; align-items: center; max-width: 100%; }
+
+.msg-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sub);
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+.msg.you .msg-label { color: var(--you); }
+.msg.them .msg-label { color: var(--them); }
+
+.bubble {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  line-height: 1.5;
+  font-size: 0.92rem;
+  font-weight: 400;
+  word-break: break-word;
+}
+
+.msg.you .bubble {
+  background: var(--you-bg);
+  border: 1px solid rgba(59,130,246,0.3);
+  border-bottom-right-radius: 4px;
+  color: #bfd4ff;
+}
+
+.msg.them .bubble {
+  background: var(--them-bg);
+  border: 1px solid rgba(16,185,129,0.3);
+  border-bottom-left-radius: 4px;
+  color: #a7f3d0;
+}
+
+.msg.system .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--sub2);
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Listening indicator */
+.listening-bubble {
+  background: var(--them-bg);
+  border: 1px solid rgba(16,185,129,0.3);
+  border-radius: var(--radius);
+  border-bottom-left-radius: 4px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.listening-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--them);
+  animation: listenBounce 1.2s infinite;
+}
+.listening-dot:nth-child(2) { animation-delay: 0.2s; }
+.listening-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes listenBounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* ── BOTTOM ZONE ── */
+.bottom-zone {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/* AI Suggestions strip */
+.suggestions-strip {
+  padding: 12px 14px 0;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestions-strip.visible { display: flex; }
+
+.suggestions-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestions-label::before {
+  content: '✦';
+  font-size: 0.5rem;
+}
+
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggestion-btn {
+  background: var(--suggest-bg);
+  border: 1px solid var(--suggest-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.83rem;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.suggestion-btn:hover {
+  background: var(--suggest-hover);
+  border-color: var(--you);
+  transform: translateX(3px);
+}
+
+.suggestion-btn:active { transform: translateX(3px) scale(0.98); }
+
+.suggestion-btn .s-arrow {
+  color: var(--sub);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: color 0.15s;
+}
+
+.suggestion-btn:hover .s-arrow { color: var(--you); }
+
+/* Input row */
+.input-zone {
+  padding: 12px 14px 20px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.text-input-wrap {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: flex-end;
+  padding: 2px 6px 2px 14px;
+  gap: 6px;
+  transition: border-color 0.2s;
+}
+
+.text-input-wrap:focus-within { border-color: var(--you); }
+
+#msgInput {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 400;
+  padding: 11px 0;
+  resize: none;
+  max-height: 100px;
+  line-height: 1.4;
+}
+
+#msgInput::placeholder { color: var(--sub); }
+
+.send-btn {
+  background: var(--you);
+  border: none;
+  border-radius: 9px;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  flex-shrink: 0;
+  margin-bottom: 3px;
+  font-size: 0.9rem;
+}
+
+.send-btn:hover { background: #2563eb; }
+.send-btn:active { transform: scale(0.92); }
+.send-btn:disabled { background: var(--border2); cursor: not-allowed; transform: none; }
+
+.listen-btn {
+  background: var(--them-bg);
+  border: 1px solid rgba(16,185,129,0.4);
+  border-radius: var(--radius);
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.listen-btn:hover { background: rgba(16,185,129,0.15); border-color: var(--them); }
+.listen-btn.active { background: rgba(16,185,129,0.2); border-color: var(--them); animation: listenRing 1.2s infinite; }
+.listen-btn:active { transform: scale(0.95); }
+.listen-btn:disabled { opacity: 0.3; cursor: not-allowed; animation: none; }
+
+@keyframes listenRing {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+}
+
+/* Thinking skeleton */
+.thinking-row {
+  display: none;
+  padding: 6px 14px 8px;
+  gap: 6px;
+}
+
+.thinking-row.visible { display: flex; flex-direction: column; gap: 5px; }
+
+.thinking-bar {
+  height: 9px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border2) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* ── VOICE SELECTOR MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 100;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal-sheet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 520px;
+  padding: 24px 24px 36px;
+  animation: sheetUp 0.25s ease;
+}
+
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-close {
+  background: none; border: none; color: var(--sub2);
+  font-size: 1.2rem; cursor: pointer;
+}
+
+.voice-list { display: flex; flex-direction: column; gap: 8px; }
+
+.voice-option {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-option:hover { border-color: var(--you); }
+.voice-option.selected { border-color: var(--you); background: var(--you-bg); }
+
+.voice-option-name { font-size: 0.88rem; font-weight: 600; }
+.voice-option-desc { font-size: 0.72rem; color: var(--sub2); margin-top: 2px; }
+.voice-check { margin-left: auto; color: var(--you); display: none; }
+.voice-option.selected .voice-check { display: block; }
+
+/* ── EMPTY STATE ── */
+.empty-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--sub);
+  padding: 40px;
+  text-align: center;
+}
+
+.empty-icon { font-size: 2.5rem; opacity: 0.4; }
+.empty-text { font-size: 0.82rem; line-height: 1.6; }
+
+/* Responsive max-width */
+@media (min-width: 560px) {
+  #scenarioScreen, #convScreen {
+    max-width: 520px;
+    margin: 0 auto;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════
+     SCREEN 1: SCENARIO PICKER
+══════════════════════════════ -->
+<div id="scenarioScreen" class="screen active">
+  <div class="scenario-header">
+    <div class="app-wordmark">VoiceBridge</div>
+    <div class="scenario-headline">What's the<br><em>situation?</em></div>
+    <div class="scenario-sub">Choose a scenario or start free. Your words will be spoken aloud; their reply becomes text.</div>
+  </div>
+
+  <div class="scenario-scroll" id="scenarioList">
+    <!-- populated by JS -->
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════
+     SCREEN 2: CONVERSATION
+══════════════════════════════ -->
+<div id="convScreen" class="screen">
+
+  <!-- Top bar -->
+  <div class="conv-topbar">
+    <button class="back-btn" onclick="goBack()">←</button>
+    <div class="conv-info">
+      <div class="conv-scenario-name">
+        <span class="conv-scenario-icon" id="convIcon">💬</span>
+        <span id="convTitle">Conversation</span>
+      </div>
+      <div class="conv-status">
+        <div class="status-pip" id="statusPip"></div>
+        <span id="statusLabel">ready</span>
+      </div>
+    </div>
+    <button class="tts-voice-btn" onclick="openVoiceModal()">🔊 Voice</button>
+  </div>
+
+  <!-- Chat log -->
+  <div class="chat-log" id="chatLog">
+    <div class="empty-chat" id="emptyState">
+      <div class="empty-icon">💬</div>
+      <div class="empty-text">Type your first message below.<br>It will be spoken aloud to them.</div>
+    </div>
+  </div>
+
+  <!-- Bottom zone -->
+  <div class="bottom-zone">
+
+    <!-- AI thinking skeleton -->
+    <div class="thinking-row" id="thinkingRow">
+      <div class="thinking-bar" style="width:75%"></div>
+      <div class="thinking-bar" style="width:55%"></div>
+    </div>
+
+    <!-- Suggestions strip -->
+    <div class="suggestions-strip" id="suggestionsStrip">
+      <div class="suggestions-label">Suggested replies</div>
+      <div class="suggestions-list" id="suggestionsList"></div>
+    </div>
+
+    <!-- Input row -->
+    <div class="input-zone">
+      <div class="text-input-wrap">
+        <textarea id="msgInput" placeholder="Type your message…" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Speak aloud & send">▶</button>
+      </div>
+      <button class="listen-btn" id="listenBtn" onclick="toggleListen()" title="Listen to their response">🎙</button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Voice selector modal -->
+<div class="modal-overlay" id="voiceModal" onclick="closeVoiceModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">
+      Choose TTS Voice
+      <button class="modal-close" onclick="closeVoiceModal()">✕</button>
+    </div>
+    <div class="voice-list" id="voiceList"></div>
+  </div>
+</div>
+
+
+<script>
+// ─────────────────────────────────────────────
+//  SCENARIOS
+// ─────────────────────────────────────────────
+const SCENARIOS = [
+  {
+    id: 'shop',
+    icon: '🛒',
+    name: 'At a Shop / Checkout',
+    desc: 'Buying something, asking prices, checking availability',
+    openers: ['How much does this cost?', 'Do you have this in a different size?', 'I\'d like to buy this please.'],
+  },
+  {
+    id: 'doctor',
+    icon: '🏥',
+    name: 'At the Doctor / Pharmacy',
+    desc: 'Medical appointments, prescriptions, symptoms',
+    openers: ['I have an appointment.', 'I\'m here to pick up a prescription.', 'I have pain in my chest.'],
+  },
+  {
+    id: 'restaurant',
+    icon: '🍽',
+    name: 'Restaurant / Café',
+    desc: 'Ordering food, asking about the menu, allergies',
+    openers: ['Can I see the menu please?', 'I have a nut allergy.', 'I\'d like to order.'],
+  },
+  {
+    id: 'transport',
+    icon: '🚌',
+    name: 'Transport / Directions',
+    desc: 'Asking for directions, buying tickets, public transit',
+    openers: ['Where is the nearest bus stop?', 'One ticket to the city centre please.', 'Which platform for the train?'],
+  },
+  {
+    id: 'emergency',
+    icon: '🚨',
+    name: 'Emergency / Urgent',
+    desc: 'Quickly communicating urgent needs',
+    openers: ['I need help urgently.', 'Please call an ambulance.', 'I am deaf — please read my screen.'],
+  },
+  {
+    id: 'social',
+    icon: '👋',
+    name: 'Meeting Someone',
+    desc: 'Introductions, small talk, social situations',
+    openers: ['Hi, I\'m deaf. I use this app to communicate.', 'Nice to meet you!', 'Could you type your reply or speak clearly?'],
+  },
+  {
+    id: 'work',
+    icon: '💼',
+    name: 'Work / Office',
+    desc: 'Meetings, colleagues, professional settings',
+    openers: ['I have a meeting with someone here.', 'Could you speak into my phone please?', 'I\'d like to discuss something with you.'],
+  },
+];
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let currentScenario = null;
+let conversation = []; // { role: 'you'|'them'|'system', text }
+let voices = [];
+let selectedVoice = null;
+let isListening = false;
+let recognition = null;
+let isBusy = false;
+
+const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+window.addEventListener('load', () => {
+  buildScenarioList();
+  loadVoices();
+  autoResizeTextarea();
+});
+
+function buildScenarioList() {
+  const list = document.getElementById('scenarioList');
+  list.innerHTML = '';
+
+  SCENARIOS.forEach(sc => {
+    const card = document.createElement('div');
+    card.className = 'scenario-card';
+    card.innerHTML = `
+      <div class="scenario-icon">${sc.icon}</div>
+      <div class="scenario-info">
+        <div class="scenario-name">${sc.name}</div>
+        <div class="scenario-desc">${sc.desc}</div>
+      </div>
+      <div class="scenario-arrow">›</div>
+    `;
+    card.addEventListener('click', () => startScenario(sc));
+    list.appendChild(card);
+  });
+
+  const divider = document.createElement('div');
+  divider.className = 'or-divider';
+  divider.textContent = 'or';
+  list.appendChild(divider);
+
+  const freeBtn = document.createElement('button');
+  freeBtn.className = 'free-start-btn';
+  freeBtn.innerHTML = `<span style="font-size:1.2rem">✏️</span> Start a free conversation`;
+  freeBtn.addEventListener('click', () => startScenario({ id: 'free', icon: '💬', name: 'Free Conversation', openers: [] }));
+  list.appendChild(freeBtn);
+}
+
+// ─────────────────────────────────────────────
+//  NAVIGATION
+// ─────────────────────────────────────────────
+function startScenario(sc) {
+  currentScenario = sc;
+  conversation = [];
+  document.getElementById('convIcon').textContent = sc.icon;
+  document.getElementById('convTitle').textContent = sc.name;
+  document.getElementById('chatLog').innerHTML = '';
+  document.getElementById('emptyState') && (document.getElementById('chatLog').innerHTML = `
+    <div class="empty-chat" id="emptyState">
+      <div class="empty-icon">${sc.icon}</div>
+      <div class="empty-text">Type your first message below.<br>It will be spoken aloud to them.</div>
+    </div>
+  `);
+  hideSuggestions();
+
+  // Rebuild chat log with scenario openers as system message
+  if (sc.openers && sc.openers.length) {
+    addSystemMsg(`Scenario: ${sc.name}. Tap a starter or type your own.`);
+    renderOpeners(sc.openers);
+  }
+
+  setStatus('ready');
+  showScreen('convScreen');
+}
+
+function goBack() {
+  stopListening();
+  showScreen('scenarioScreen');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+//  RENDER HELPERS
+// ─────────────────────────────────────────────
+function addMsg(role, text) {
+  const emptyState = document.getElementById('emptyState');
+  if (emptyState) emptyState.remove();
+
+  conversation.push({ role, text });
+
+  const log = document.getElementById('chatLog');
+  const msg = document.createElement('div');
+  msg.className = `msg ${role}`;
+
+  const labelMap = { you: '🔊 You (spoken aloud)', them: '👤 Them (heard)', system: '' };
+  msg.innerHTML = `
+    ${role !== 'system' ? `<div class="msg-label">${labelMap[role]}</div>` : ''}
+    <div class="bubble">${escHtml(text)}</div>
+  `;
+  log.appendChild(msg);
+  scrollChat();
+}
+
+function addSystemMsg(text) {
+  const log = document.getElementById('chatLog');
+  const msg = document.createElement('div');
+  msg.className = 'msg system';
+  msg.innerHTML = `<div class="bubble">${escHtml(text)}</div>`;
+  log.appendChild(msg);
+  scrollChat();
+}
+
+function renderOpeners(openers) {
+  const log = document.getElementById('chatLog');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:2px;';
+
+  openers.forEach(o => {
+    const btn = document.createElement('button');
+    btn.className = 'suggestion-btn';
+    btn.innerHTML = `${escHtml(o)} <span class="s-arrow">›</span>`;
+    btn.addEventListener('click', () => {
+      wrap.remove();
+      speakAndLog(o);
+    });
+    wrap.appendChild(btn);
+  });
+
+  log.appendChild(wrap);
+  scrollChat();
+}
+
+function renderSuggestions(suggestions) {
+  const strip = document.getElementById('suggestionsStrip');
+  const list = document.getElementById('suggestionsList');
+  list.innerHTML = '';
+
+  suggestions.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'suggestion-btn';
+    btn.innerHTML = `${escHtml(s)} <span class="s-arrow">›</span>`;
+    btn.addEventListener('click', () => {
+      hideSuggestions();
+      speakAndLog(s);
+    });
+    list.appendChild(btn);
+  });
+
+  strip.classList.add('visible');
+  scrollChat();
+}
+
+function hideSuggestions() {
+  document.getElementById('suggestionsStrip').classList.remove('visible');
+  document.getElementById('suggestionsList').innerHTML = '';
+}
+
+function showListeningBubble() {
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = 'msg them';
+  div.id = 'listeningIndicator';
+  div.innerHTML = `
+    <div class="msg-label">👤 Them</div>
+    <div class="listening-bubble">
+      <div class="listening-dot"></div>
+      <div class="listening-dot"></div>
+      <div class="listening-dot"></div>
+    </div>
+  `;
+  log.appendChild(div);
+  scrollChat();
+}
+
+function removeListeningBubble() {
+  const el = document.getElementById('listeningIndicator');
+  if (el) el.remove();
+}
+
+function showThinking() {
+  document.getElementById('thinkingRow').classList.add('visible');
+}
+
+function hideThinking() {
+  document.getElementById('thinkingRow').classList.remove('visible');
+}
+
+function scrollChat() {
+  const log = document.getElementById('chatLog');
+  setTimeout(() => log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' }), 50);
+}
+
+// ─────────────────────────────────────────────
+//  SEND MESSAGE (You → speak aloud)
+// ─────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text || isBusy) return;
+  input.value = '';
+  input.style.height = 'auto';
+  hideSuggestions();
+  await speakAndLog(text);
+}
+
+async function speakAndLog(text) {
+  if (isBusy) return;
+  isBusy = true;
+  hideSuggestions();
+
+  addMsg('you', text);
+  setStatus('speaking', '🔊 Speaking aloud…');
+
+  await speakTTS(text);
+
+  setStatus('listening', '🎙 Listening for reply…');
+  startListeningAuto();
+}
+
+// ─────────────────────────────────────────────
+//  TEXT-TO-SPEECH
+// ─────────────────────────────────────────────
+function loadVoices() {
+  const setVoices = () => {
+    voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+    if (voices.length && !selectedVoice) {
+      // Prefer a natural-sounding voice
+      selectedVoice = voices.find(v => v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha'))
+        || voices.find(v => !v.localService)
+        || voices[0];
+    }
+    buildVoiceList();
+  };
+  setVoices();
+  window.speechSynthesis.onvoiceschanged = setVoices;
+}
+
+function speakTTS(text) {
+  return new Promise(resolve => {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    if (selectedVoice) utt.voice = selectedVoice;
+    utt.rate = 0.95;
+    utt.pitch = 1;
+    utt.volume = 1;
+    utt.onend = resolve;
+    utt.onerror = resolve;
+    window.speechSynthesis.speak(utt);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  SPEECH RECOGNITION (Them → text)
+// ─────────────────────────────────────────────
+function toggleListen() {
+  if (isListening) {
+    stopListening();
+  } else {
+    manualListen();
+  }
+}
+
+function manualListen() {
+  if (!checkSR()) return;
+  hideSuggestions();
+  startListeningAuto(true);
+}
+
+function startListeningAuto(isManual = false) {
+  if (!checkSR()) {
+    isBusy = false;
+    setStatus('ready');
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('listenBtn').classList.add('active');
+    setStatus('listening', '🎙 Listening for reply…');
+    showListeningBubble();
+  };
+
+  recognition.onresult = async (e) => {
+    const transcript = e.results[0][0].transcript.trim();
+    stopListening();
+    removeListeningBubble();
+    addMsg('them', transcript);
+    await generateSuggestions(transcript);
+  };
+
+  recognition.onerror = (e) => {
+    stopListening();
+    removeListeningBubble();
+    if (e.error !== 'no-speech' && e.error !== 'aborted') {
+      addSystemMsg(`Couldn't hear anything clearly. Tap 🎙 to try again.`);
+    }
+    isBusy = false;
+    setStatus('ready');
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    document.getElementById('listenBtn').classList.remove('active');
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  if (recognition) {
+    try { recognition.stop(); } catch(e) {}
+    recognition = null;
+  }
+  isListening = false;
+  document.getElementById('listenBtn').classList.remove('active');
+  removeListeningBubble();
+}
+
+function checkSR() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    addSystemMsg('Speech recognition not supported. Try Chrome or Edge.');
+    return false;
+  }
+  return true;
+}
+
+// ─────────────────────────────────────────────
+//  AI SUGGESTIONS (Claude API)
+// ─────────────────────────────────────────────
+async function generateSuggestions(theirMessage) {
+  setStatus('thinking', '✦ Thinking of replies…');
+  showThinking();
+
+  const context = conversation.slice(-8).map(m =>
+    `${m.role === 'you' ? 'Me' : 'Them'}: ${m.text}`
+  ).join('\n');
+
+  const scenarioCtx = currentScenario?.name || 'General conversation';
+
+  const prompt = `You are helping a deaf person communicate in real time. 
+Scenario: ${scenarioCtx}
+
+Recent conversation:
+${context}
+
+The other person just said: "${theirMessage}"
+
+Generate exactly 3 short, natural reply suggestions for the deaf person to say next. 
+Replies should be practical, clear, and appropriate for the scenario.
+Keep each reply under 20 words.
+Return ONLY a JSON array of 3 strings. No explanation. No markdown.
+Example: ["Thanks, that helps.", "Could you repeat that?", "I need a moment."]`;
+
+  try {
+    const res = await fetch(CLAUDE_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    const data = await res.json();
+    const raw = data.content?.[0]?.text || '[]';
+
+    let suggestions;
+    try {
+      const clean = raw.replace(/```json|```/g, '').trim();
+      suggestions = JSON.parse(clean);
+    } catch {
+      suggestions = [
+        'Could you repeat that please?',
+        'Thank you.',
+        'I understand.',
+      ];
+    }
+
+    hideThinking();
+    renderSuggestions(suggestions.slice(0, 3));
+    setStatus('ready');
+    isBusy = false;
+
+  } catch (err) {
+    hideThinking();
+    // Fallback suggestions
+    renderSuggestions([
+      'Could you repeat that please?',
+      'Thank you, I understand.',
+      'One moment please.',
+    ]);
+    setStatus('ready');
+    isBusy = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  STATUS
+// ─────────────────────────────────────────────
+function setStatus(type, label = '') {
+  const pip = document.getElementById('statusPip');
+  const lbl = document.getElementById('statusLabel');
+  pip.className = 'status-pip' + (type && type !== 'ready' ? ` ${type}` : '');
+  lbl.textContent = label || type;
+
+  const listenBtn = document.getElementById('listenBtn');
+  const sendBtn = document.getElementById('sendBtn');
+  const msgInput = document.getElementById('msgInput');
+
+  if (type === 'speaking') {
+    listenBtn.disabled = true;
+    sendBtn.disabled = true;
+  } else if (type === 'listening') {
+    sendBtn.disabled = true;
+  } else {
+    listenBtn.disabled = false;
+    sendBtn.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  VOICE MODAL
+// ─────────────────────────────────────────────
+function buildVoiceList() {
+  const list = document.getElementById('voiceList');
+  list.innerHTML = '';
+  if (!voices.length) {
+    list.innerHTML = '<div style="color:var(--sub2);font-size:0.8rem;">No voices found. Try Chrome or Edge.</div>';
+    return;
+  }
+  voices.slice(0, 12).forEach(v => {
+    const opt = document.createElement('div');
+    opt.className = 'voice-option' + (selectedVoice?.name === v.name ? ' selected' : '');
+    opt.innerHTML = `
+      <div>
+        <div class="voice-option-name">${v.name}</div>
+        <div class="voice-option-desc">${v.lang} · ${v.localService ? 'System' : 'Network'}</div>
+      </div>
+      <span class="voice-check">✓</span>
+    `;
+    opt.addEventListener('click', () => {
+      selectedVoice = v;
+      buildVoiceList();
+      // preview
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance('Hello, I use this app to communicate.');
+      utt.voice = v;
+      window.speechSynthesis.speak(utt);
+    });
+    list.appendChild(opt);
+  });
+}
+
+function openVoiceModal() { document.getElementById('voiceModal').classList.add('open'); }
+
+function closeVoiceModal(e) {
+  if (!e || e.target === document.getElementById('voiceModal') || e.currentTarget.classList.contains('modal-close')) {
+    document.getElementById('voiceModal').classList.remove('open');
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TEXTAREA AUTO-RESIZE
+// ─────────────────────────────────────────────
+function autoResizeTextarea() {
+  const ta = document.getElementById('msgInput');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
