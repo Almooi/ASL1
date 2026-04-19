@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>VoiceBridge</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#07090f;--c1:#0d101a;--c2:#131724;--c3:#1a1f30;
+  --b1:#212640;--b2:#2a304f;
+  --t1:#dde4f8;--t2:#8892b0;--t3:#4a5478;
+  --blue:#4d8af0;--blue-dim:rgba(77,138,240,.15);--blue-line:rgba(77,138,240,.25);
+  --green:#33c78f;--green-dim:rgba(51,199,143,.12);--green-line:rgba(51,199,143,.22);
+  --gold:#f0a830;--gold-dim:rgba(240,168,48,.12);
+  --red:#e85555;--red-dim:rgba(232,85,85,.12);--red-line:rgba(232,85,85,.25);
+  --fs:15px;--fsm:13px;--fss:11px;--fsl:17px;
+  --r:12px;--rs:8px;--rx:5px
+}
+html,body,#app{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--t1);font-size:var(--fs)}
+button,input,textarea{font-family:'DM Sans',sans-serif;font-size:var(--fs)}
+::-webkit-scrollbar{width:2px}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;max-width:500px;margin:0 auto}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--b1);background:var(--c1);flex-shrink:0}
+.ibtn{width:34px;height:34px;border-radius:var(--rs);border:1px solid var(--b1);background:none;color:var(--t2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:14px}
+.ibtn:hover{border-color:var(--b2);color:var(--t1)}
+input,textarea{background:var(--c1);border:1px solid var(--b2);border-radius:var(--rs);padding:9px 12px;color:var(--t1);outline:none;width:100%}
+input::placeholder,textarea::placeholder{color:var(--t3)}
+@keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(51,199,143,.4)}50%{box-shadow:0 0 0 6px rgba(51,199,143,0)}}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+@keyframes slideup{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+
+/* ── utils ───────────────────────────────────── */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
+const {useState, useEffect, useRef, useMemo, useCallback} = React;
+
+/* ── IndexedDB ───────────────────────────────── */
+let _db = null;
+async function db_open() {
+  if (_db) return _db;
+  return new Promise((ok, fail) => {
+    const r = indexedDB.open('vb5', 1);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      ['settings','people','places','sessions','quality'].forEach(s => {
+        if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, {keyPath:'id'});
+      });
+    };
+    r.onsuccess = e => { _db = e.target.result; ok(_db); };
+    r.onerror = fail;
+  });
+}
+async function db_get(store, id) {
+  const d = await db_open();
+  return new Promise((ok, fail) => {
+    const t = d.transaction(store, 'readonly').objectStore(store).get(id);
+    t.onsuccess = () => ok(t.result);
+    t.onerror = fail;
+  });
+}
+async function db_put(store, obj) {
+  const d = await db_open();
+  return new Promise((ok, fail) => {
+    const t = d.transaction(store, 'readwrite').objectStore(store).put(obj);
+    t.onsuccess = () => ok();
+    t.onerror = fail;
+  });
+}
+async function db_all(store) {
+  const d = await db_open();
+  return new Promise((ok, fail) => {
+    const t = d.transaction(store, 'readonly').objectStore(store).getAll();
+    t.onsuccess = () => ok(t.result || []);
+    t.onerror = fail;
+  });
+}
+async function db_del(store, id) {
+  const d = await db_open();
+  return new Promise((ok, fail) => {
+    const t = d.transaction(store, 'readwrite').objectStore(store).delete(id);
+    t.onsuccess = () => ok();
+    t.onerror = fail;
+  });
+}
+
+/* ── TTS ─────────────────────────────────────── */
+function speak(text) {
+  return new Promise(done => {
+    if (!window.speechSynthesis) { done(); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const fr = voices.find(v => ['thomas','nicolas','pierre','jean'].some(n => v.name.toLowerCase().includes(n) && v.lang.startsWith('fr')))
+      || voices.find(v => v.lang.startsWith('fr'))
+      || voices.find(v => ['daniel','james','arthur'].some(n => v.name.toLowerCase().includes(n)))
+      || voices[0];
+    if (fr) u.voice = fr;
+    u.rate = 0.91; u.pitch = 0.86; u.volume = 1;
+    u.onend = done; u.onerror = done;
+    window.speechSynthesis.speak(u);
+  });
+}
+
+/* ── Image fetch (ARASAAC + Wikipedia) ──────── */
+const IMG_CACHE = {};
+const STOPWORDS = new Set(['a','an','the','is','are','was','were','be','been','have','has','do','does','will','would','can','could','i','you','he','she','it','we','they','me','my','your','this','that','and','but','or','in','on','at','to','of','by','not','so','just']);
+const ILLUSTRATABLE = new Set(['prescription','medicine','pharmacy','doctor','hospital','food','water','money','price','shop','order','help','pain','stop','toilet','emergency','ambulance','police','fire','car','bus','train','ticket','receipt','menu','allergy','tablet','blood','heart','head','arm','leg','back','stomach','door','window','phone','bag','card','coffee','tea','bread','milk','cheese','meat','fish','fruit','apple','chair','table','bed','bathroom','kitchen','office','school','bank','hotel','restaurant','market','street','road','park','station','airport','injection','cough','fever','dizzy','sick','hurt','glasses','mask','wheelchair','hearing','deaf']);
+
+async function fetchImgs(word, sentence, ctx) {
+  const key = word.toLowerCase() + '|' + (ctx || '');
+  if (IMG_CACHE[key]) return IMG_CACHE[key];
+  const extra = sentence.toLowerCase().split(/\s+/)
+    .filter(w => !STOPWORDS.has(w) && w.length > 3 && w !== word.toLowerCase())
+    .slice(0, 2);
+  if (ctx) extra.unshift(ctx.toLowerCase().split(' ')[0]);
+  const q = [word, ...extra].slice(0, 3).join(' ');
+  const results = [];
+  try {
+    const r = await fetch(`https://api.arasaac.org/v1/pictograms/en/search/${encodeURIComponent(q)}`);
+    if (r.ok) {
+      const data = await r.json();
+      if (Array.isArray(data)) {
+        data.slice(0, 6).forEach(p => {
+          if (p._id) results.push({
+            type: 'arasaac',
+            url: `https://static.arasaac.org/pictograms/${p._id}/${p._id}_500.png`,
+            label: (p.keywords && p.keywords[0] && p.keywords[0].keyword) || word
+          });
+        });
+      }
+    }
+  } catch(e) {}
+  try {
+    const r2 = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+    if (r2.ok) {
+      const d2 = await r2.json();
+      if (d2.thumbnail && d2.thumbnail.source) results.push({type:'wiki', url:d2.thumbnail.source, label:d2.title||word});
+    }
+  } catch(e) {}
+  IMG_CACHE[key] = results;
+  return results;
+}
+
+/* ── Tiny reusable pieces ────────────────────── */
+function Btn({children, onClick, style, disabled, title}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{cursor: disabled ? 'not-allowed' : 'pointer', ...style}}
+    >{children}</button>
+  );
+}
+
+function ScorePill({score}) {
+  const bg = score >= 80 ? 'rgba(51,199,143,.15)' : score >= 50 ? 'rgba(240,168,48,.15)' : 'rgba(232,85,85,.15)';
+  const col = score >= 80 ? '#33c78f' : score >= 50 ? '#f0a830' : '#e85555';
+  return (
+    <sup style={{background:bg,color:col,fontSize:'0.58rem',fontWeight:700,padding:'1px 5px',borderRadius:4,marginLeft:4,verticalAlign:'super',lineHeight:1,display:'inline-block'}}>
+      {score}
+    </sup>
+  );
+}
+
+function AmbDot({level, onClick}) {
+  const cols = ['#2a2d3a','#b8a000','#e8980a','#4d8af0','#33c78f','#e85555'];
+  const c = cols[Math.min(level, 5)];
+  return (
+    <div
+      onClick={onClick}
+      style={{width:8,height:8,borderRadius:'50%',background:c,cursor:'pointer',flexShrink:0,
+        boxShadow: level >= 3 ? `0 0 7px ${c}` : 'none',
+        animation: level >= 3 ? 'pulse 1.4s infinite' : 'none',
+        transition:'background .3s'}}
+      title="Environment"
+    />
+  );
+}
+
+function Toggle({on, onToggle}) {
+  return (
+    <div onClick={onToggle} style={{width:44,height:24,borderRadius:12,background:on?'var(--blue)':'var(--b2)',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
+      <div style={{width:18,height:18,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:on?23:3,transition:'left .2s'}}/>
+    </div>
+  );
+}
+
+function Confirm({msg, okLabel, danger, onOk, onCancel}) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:500,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:danger?'#140808':'var(--c1)',border:`1px solid ${danger?'var(--red-line)':'var(--b2)'}`,borderRadius:var_r,padding:'22px 20px',maxWidth:300,width:'100%'}}>
+        <p style={{fontSize:'var(--fsm)',lineHeight:1.6,marginBottom:18,color:'var(--t1)'}}>{msg}</p>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={onCancel} style={{flex:1,background:'none',border:'1px solid var(--b2)',borderRadius:var_rs,padding:'9px',color:'var(--t2)',cursor:'pointer',fontSize:'var(--fss)'}}>Cancel</button>
+          <button onClick={onOk} style={{flex:1,background:danger?'var(--red-dim)':'var(--blue-dim)',border:`1px solid ${danger?'var(--red-line)':'var(--blue-line)'}`,borderRadius:var_rs,padding:'9px',color:danger?'var(--red)':'var(--blue)',fontWeight:600,cursor:'pointer',fontSize:'var(--fss)'}}>{okLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const var_r = 'var(--r)';
+const var_rs = 'var(--rs)';
+
+/* ── Image card ──────────────────────────────── */
+function ImgCard({word, sentence, ctxName, onClose}) {
+  const [list, setList] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setList([]);
+    setIdx(0);
+    fetchImgs(word, sentence, ctxName)
+      .then(r => { setList(r); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [word]);
+
+  const cur = list[idx] || null;
+
+  return (
+    <div style={{background:'var(--c2)',border:'1px solid var(--b2)',borderRadius:var_r,padding:12,marginTop:6,display:'inline-flex',flexDirection:'column',alignItems:'center',gap:8,animation:'slideup .2s ease',minWidth:160,maxWidth:200}}>
+      <div style={{display:'flex',justifyContent:'space-between',width:'100%',alignItems:'center'}}>
+        <span style={{fontSize:'var(--fss)',color:'var(--t2)',fontWeight:600,fontFamily:"'DM Mono',monospace"}}>{word}</span>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',fontSize:13,lineHeight:1,padding:'0 2px'}}>✕</button>
+      </div>
+      {loading
+        ? <div style={{width:16,height:16,border:'2px solid var(--b2)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+        : cur
+          ? <>
+              <img src={cur.url} alt={cur.label}
+                style={{width:100,height:100,objectFit:'contain',borderRadius:8,background:'rgba(255,255,255,.04)'}}
+                onError={e => { e.target.style.opacity = '.15'; }}
+              />
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <span style={{fontSize:'var(--fss)',color:'var(--t3)',fontFamily:"'DM Mono',monospace"}}>{cur.type === 'arasaac' ? 'ARASAAC' : 'WIKI'}</span>
+                {list.length > 1 && (
+                  <button onClick={() => setIdx((idx + 1) % list.length)}
+                    style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:5,padding:'2px 8px',color:'var(--t2)',fontSize:'var(--fss)',cursor:'pointer'}}>
+                    ↺
+                  </button>
+                )}
+              </div>
+            </>
+          : <span style={{fontSize:'var(--fss)',color:'var(--t3)'}}>No image found</span>
+      }
+    </div>
+  );
+}
+
+/* ── Message bubble ──────────────────────────── */
+function Bubble({msg, isLatest, onSayAgain, onSpeak, onDelete, onFlag, onEdit, placeName}) {
+  const [tapImg, setTapImg] = useState(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTxt, setEditTxt] = useState(msg.text);
+  const lpRef = useRef(null);
+
+  function startLp() { lpRef.current = setTimeout(() => setShowMenu(true), 480); }
+  function endLp() { clearTimeout(lpRef.current); }
+
+  function renderText(text) {
+    if (msg.role !== 'them' || msg.interim) return text;
+    return text.split(' ').map((w, i) => {
+      const clean = w.replace(/[^a-zA-Z]/g, '').toLowerCase();
+      if (ILLUSTRATABLE.has(clean)) {
+        return (
+          <span key={i}>
+            {i > 0 ? ' ' : ''}
+            <span
+              onClick={() => setTapImg(tapImg === clean ? null : clean)}
+              style={{textDecoration:'underline dotted var(--green)',textUnderlineOffset:3,cursor:'pointer'}}
+            >{w}</span>
+          </span>
+        );
+      }
+      return <span key={i}>{i > 0 ? ' ' : ''}{w}</span>;
+    });
+  }
+
+  if (msg.role === 'system') {
+    return (
+      <div style={{alignSelf:'center',background:'var(--c2)',border:'1px solid var(--b1)',borderRadius:20,padding:'4px 14px',fontSize:'var(--fss)',color:'var(--t3)',animation:'fadein .2s ease',textAlign:'center',maxWidth:'88%',fontFamily:"'DM Mono',monospace"}}>
+        {msg.text}
+      </div>
+    );
+  }
+
+  const isYou = msg.role === 'you';
+  return (
+    <div style={{display:'flex',flexDirection:'column',maxWidth:'86%',alignSelf:isYou?'flex-end':'flex-start',alignItems:isYou?'flex-end':'flex-start',animation:'fadein .2s ease',gap:3}}>
+      <div style={{fontSize:'var(--fss)',color:isYou?'var(--blue)':'var(--green)',letterSpacing:'0.07em',textTransform:'uppercase',fontWeight:600,display:'flex',alignItems:'center',gap:5,padding:'0 2px'}}>
+        {isYou ? '🔊 You' : '👤 Them'}
+        {msg.flagged && <span style={{color:'var(--gold)'}}>⚑</span>}
+      </div>
+
+      {msg.struck && (
+        <div style={{background:'var(--green-dim)',border:'1px solid var(--green-line)',borderRadius:var_r,borderBottomLeftRadius:3,padding:'9px 13px',fontSize:'var(--fs)',lineHeight:1.5,color:'rgba(51,199,143,.4)',textDecoration:'line-through',wordBreak:'break-word'}}>
+          {msg.struck}<ScorePill score={msg.struckScore || 0}/>
+        </div>
+      )}
+
+      {editing ? (
+        <div style={{width:'100%',display:'flex',flexDirection:'column',gap:6}}>
+          <textarea
+            value={editTxt}
+            onChange={e => setEditTxt(e.target.value)}
+            rows={2}
+            style={{resize:'none',border:'1px solid var(--blue-line)',fontSize:'var(--fs)',lineHeight:1.4}}
+          />
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={() => { onEdit(msg.id, editTxt); setEditing(false); }} style={{background:'var(--blue)',border:'none',borderRadius:var_rx,padding:'6px 14px',color:'#fff',fontSize:'var(--fss)',cursor:'pointer',fontWeight:600}}>Save</button>
+            <button onClick={() => setEditing(false)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:var_rx,padding:'6px 12px',color:'var(--t2)',fontSize:'var(--fss)',cursor:'pointer'}}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div
+          onMouseDown={startLp} onMouseUp={endLp} onMouseLeave={endLp}
+          onTouchStart={startLp} onTouchEnd={endLp}
+          style={{
+            padding:'10px 13px',borderRadius:var_r,fontSize:'var(--fs)',lineHeight:1.55,wordBreak:'break-word',cursor:'default',
+            ...(isYou
+              ? {background:'var(--blue-dim)',border:'1px solid var(--blue-line)',borderBottomRightRadius:3,color:'#b8d0ff'}
+              : {background:'var(--green-dim)',border:'1px solid var(--green-line)',borderBottomLeftRadius:3,color:'#a0eecf'}),
+            ...(msg.interim ? {opacity:.55} : {})
+          }}
+        >
+          {renderText(msg.text)}
+          {!isYou && !msg.interim && msg.conf > 0 && <ScorePill score={msg.conf}/>}
+        </div>
+      )}
+
+      {tapImg && (
+        <ImgCard word={tapImg} sentence={msg.text} ctxName={placeName||''} onClose={() => setTapImg(null)}/>
+      )}
+
+      {!isYou && isLatest && !msg.interim && (
+        <button
+          onClick={onSayAgain}
+          style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'3px 10px',color:'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',display:'flex',alignItems:'center',gap:4,marginTop:1}}
+        >↺ Say again</button>
+      )}
+
+      {showMenu && (
+        <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:2}}>
+          {[
+            ['🔊', () => { onSpeak(msg.text); setShowMenu(false); }],
+            ['✏️', () => { setEditing(true); setShowMenu(false); }],
+            ['🗑', () => { onDelete(msg.id); setShowMenu(false); }],
+            [msg.flagged ? '⚑' : '⚐', () => { onFlag(msg.id); setShowMenu(false); }],
+          ].map(([ico, fn], i) => (
+            <button key={i} onClick={fn} style={{background:'var(--c2)',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 9px',color:'var(--t2)',fontSize:'var(--fss)',cursor:'pointer'}}>{ico}</button>
+          ))}
+          <button onClick={() => setShowMenu(false)} style={{background:'none',border:'none',color:'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',padding:'5px 4px'}}>✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── SOS overlay ─────────────────────────────── */
+function SOSScreen({profile, onClose}) {
+  const rows = [
+    profile.name  && {k:'Name',       v:profile.name},
+    profile.dob   && {k:'DOB',        v:profile.dob},
+    profile.ecName && {k:'Emergency', v:profile.ecName},
+    profile.ecPhone && {k:'Phone',    v:profile.ecPhone},
+    profile.medical && {k:'Medical',  v:profile.medical},
+  ].filter(Boolean);
+  if (!rows.length) rows.push({k:'Note', v:'No profile saved. Open Settings to add your details.'});
+  return (
+    <div style={{position:'fixed',inset:0,background:'#0c0000',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,gap:16,textAlign:'center'}}>
+      <div style={{fontSize:'clamp(2.5rem,10vw,4.5rem)',fontWeight:700,color:'var(--red)',animation:'pulse 1s infinite',lineHeight:1}}>⚠ SOS</div>
+      <div style={{background:'rgba(232,85,85,.08)',border:'1.5px solid var(--red-line)',borderRadius:var_r,padding:'16px 20px',width:'100%',maxWidth:380,textAlign:'left'}}>
+        {rows.map((r, i) => (
+          <div key={i} style={{display:'flex',gap:12,padding:'6px 0',borderBottom:i<rows.length-1?'1px solid rgba(232,85,85,.12)':'none'}}>
+            <div style={{color:'var(--t3)',fontSize:'var(--fss)',textTransform:'uppercase',letterSpacing:'.06em',minWidth:80,marginTop:1}}>{r.k}</div>
+            <div style={{color:'var(--t1)',fontWeight:600,flex:1,fontSize:'var(--fsm)'}}>{r.v}</div>
+          </div>
+        ))}
+      </div>
+      <p style={{color:'var(--t3)',fontSize:'var(--fss)',maxWidth:300,lineHeight:1.6}}>Show this screen to emergency services or a bystander.</p>
+      <button onClick={onClose} style={{background:'var(--red-dim)',border:'1px solid var(--red-line)',borderRadius:var_r,padding:'12px 26px',color:'var(--red)',fontWeight:700,cursor:'pointer',letterSpacing:'.05em',textTransform:'uppercase',fontSize:'var(--fsm)'}}>← Close SOS</button>
+    </div>
+  );
+}
+
+/* ── Show Screen overlay ─────────────────────── */
+function ShowScreen({profile, onClose}) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'#fff',zIndex:250,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:28,gap:16,textAlign:'center'}}>
+      <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:'clamp(1.9rem,7vw,3rem)',fontWeight:300,color:'#111',lineHeight:1.35}}>Please read<br/>my screen.</div>
+      <p style={{fontSize:'clamp(0.9rem,3.5vw,1.05rem)',color:'#555',maxWidth:340,lineHeight:1.7}}>I am deaf or non-speaking. I use this app to communicate. Please speak clearly — I will show you my reply.</p>
+      {profile.name && (
+        <div style={{background:'#f4f4f4',border:'1px solid #ddd',borderRadius:10,padding:'12px 18px',textAlign:'left',width:'100%',maxWidth:360,lineHeight:2,color:'#333',fontSize:'1rem'}}>
+          <b>Name:</b> {profile.name}<br/>
+          {profile.dob && <><b>DOB:</b> {profile.dob}<br/></>}
+          {profile.medical && <><b>Notes:</b> {profile.medical}</>}
+        </div>
+      )}
+      <button onClick={onClose} style={{background:'#111',border:'none',borderRadius:10,padding:'12px 26px',color:'#fff',fontWeight:700,cursor:'pointer',fontSize:'var(--fsm)',textTransform:'uppercase',letterSpacing:'.05em'}}>← Back</button>
+    </div>
+  );
+}
+
+/* ── Environment screen ──────────────────────── */
+function EnvScreen({level, volume, transcript, alerts, soundLevels, onClose}) {
+  const lbl = ['Silent','Sound','Noise','Voice','Directed','⚠ Name!'];
+  const cols = ['var(--t3)','#b8a000','var(--gold)','var(--blue)','var(--green)','var(--red)'];
+  const ico = ['🔇','👂','🔉','🗣','📢','🔴'];
+  const col = cols[Math.min(level, 5)];
+  const STYPES = [{id:'voice',l:'Human voice',i:'🗣'},{id:'music',l:'Music/TV',i:'🎵'},{id:'traffic',l:'Traffic',i:'🚗'},{id:'alarm',l:'Alarm',i:'🚨'},{id:'child',l:'Child',i:'👶'}];
+
+  return (
+    <div className="screen" style={{background:'var(--bg)',zIndex:100}}>
+      <div className="topbar">
+        <button className="ibtn" onClick={onClose}>←</button>
+        <span style={{fontWeight:600,flex:1,fontSize:'var(--fsm)'}}>🌐 Environment</span>
+        <div style={{display:'flex',alignItems:'center',gap:5,fontSize:'var(--fss)',color:col}}>
+          <div style={{width:6,height:6,borderRadius:'50%',background:col,animation:'pulse 1.2s infinite'}}/>Live
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 24px',display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{background:'var(--c1)',border:`1px solid ${col}33`,borderRadius:var_r,padding:16,textAlign:'center'}}>
+          <div style={{fontSize:'2rem',marginBottom:5}}>{ico[Math.min(level,5)]}</div>
+          <div style={{fontSize:'var(--fsl)',fontWeight:600,color:col}}>{lbl[Math.min(level,5)]}</div>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',marginTop:3}}>Volume {volume}/100</div>
+        </div>
+        <div style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'12px 14px'}}>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:8,fontFamily:"'DM Mono',monospace"}}>Ambient Volume</div>
+          <div style={{height:6,background:'var(--b1)',borderRadius:3,overflow:'hidden'}}>
+            <div style={{width:`${volume}%`,height:'100%',background:'linear-gradient(90deg,var(--green),var(--gold),var(--red))',borderRadius:3,transition:'width .1s'}}/>
+          </div>
+        </div>
+        <div style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'12px 14px'}}>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:10,fontFamily:"'DM Mono',monospace"}}>Sound Classification</div>
+          {STYPES.map(s => {
+            const val = parseInt(soundLevels[s.id]) || 0;
+            const lbl2 = val > 60 ? 'HIGH' : val > 20 ? 'MED' : val > 0 ? 'LOW' : '—';
+            const dc = val > 60 ? 'var(--red)' : val > 20 ? 'var(--gold)' : val > 0 ? 'var(--green)' : 'var(--b2)';
+            return (
+              <div key={s.id} style={{display:'flex',alignItems:'center',gap:10,padding:'5px 0',borderBottom:'1px solid var(--b1)'}}>
+                <span style={{fontSize:'1rem',width:20}}>{s.i}</span>
+                <span style={{flex:1,fontSize:'var(--fsm)',color:'var(--t2)'}}>{s.l}</span>
+                <div style={{width:50,height:3,background:'var(--b1)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${val}%`,height:'100%',background:dc,transition:'width .3s'}}/></div>
+                <span style={{fontSize:'var(--fss)',color:dc,width:26,textAlign:'right',fontFamily:"'DM Mono',monospace"}}>{lbl2}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'12px 14px'}}>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:10,fontFamily:"'DM Mono',monospace"}}>Live Transcript</div>
+          {transcript.length === 0
+            ? <p style={{fontSize:'var(--fss)',color:'var(--t3)'}}>Listening for speech…</p>
+            : transcript.map(e => (
+              <div key={e.id} style={{display:'flex',gap:8,marginBottom:4}}>
+                <span style={{fontSize:'var(--fss)',color:'var(--t3)',flexShrink:0,fontFamily:"'DM Mono',monospace"}}>{e.time}</span>
+                <span style={{fontSize:'var(--fsm)',color:'var(--t2)',flex:1,lineHeight:1.4}}>{e.text}</span>
+                {e.conf > 0 && <ScorePill score={e.conf}/>}
+              </div>
+            ))
+          }
+        </div>
+        {alerts.length > 0 && (
+          <div style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'12px 14px'}}>
+            <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:8,fontFamily:"'DM Mono',monospace"}}>Alerts</div>
+            {alerts.slice(0, 10).map(a => (
+              <div key={a.id} style={{display:'flex',gap:8,padding:'4px 0',borderBottom:'1px solid var(--b1)',fontSize:'var(--fss)'}}>
+                <span style={{color:'var(--t3)',flexShrink:0}}>{a.time}</span>
+                <span style={{color:'var(--red)'}}>{a.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Profile editor ──────────────────────────── */
+function ProfileEd({item, type, onSave, onBack}) {
+  const [form, setForm] = useState({...item});
+  const [newFact, setNewFact] = useState('');
+  const set = (k, v) => setForm(f => ({...f, [k]: v}));
+
+  return (
+    <div className="screen">
+      <div className="topbar">
+        <button className="ibtn" onClick={onBack}>←</button>
+        <span style={{fontWeight:600,flex:1,fontSize:'var(--fsm)'}}>{type === 'person' ? '👤' : '📍'} {form.name || 'Profile'}</span>
+        <button onClick={() => onSave(form)} style={{background:'var(--blue)',border:'none',borderRadius:var_rs,padding:'7px 14px',color:'#fff',fontWeight:600,cursor:'pointer',fontSize:'var(--fss)',textTransform:'uppercase',letterSpacing:'.05em'}}>Save</button>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 30px'}}>
+        <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Name</label>
+        <input value={form.name||''} onChange={e=>set('name',e.target.value)} placeholder="Name…" style={{marginBottom:12}}/>
+        {type === 'person' ? (
+          <>
+            <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Relationship</label>
+            <input value={form.relationship||''} onChange={e=>set('relationship',e.target.value)} placeholder="e.g. colleague, doctor, friend…" style={{marginBottom:12}}/>
+          </>
+        ) : (
+          <>
+            <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Type</label>
+            <input value={form.type||''} onChange={e=>set('type',e.target.value)} placeholder="e.g. pharmacy, café, office…" style={{marginBottom:12}}/>
+          </>
+        )}
+        <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Communication style</label>
+        <input value={form.communicationStyle||''} onChange={e=>set('communicationStyle',e.target.value)} placeholder="e.g. formal, friendly, brief…" style={{marginBottom:12}}/>
+        <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Notes</label>
+        <textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)} placeholder="Anything useful to remember…" rows={3} style={{resize:'none',lineHeight:1.5,marginBottom:16}}/>
+        <div style={{fontSize:'var(--fss)',color:'var(--t2)',marginBottom:8}}>Key facts</div>
+        {(form.keyFacts||[]).map((f, i) => (
+          <div key={i} style={{display:'flex',gap:6,marginBottom:5,alignItems:'center'}}>
+            <div style={{flex:1,background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_rs,padding:'7px 11px',fontSize:'var(--fsm)',color:'var(--t2)'}}>{f}</div>
+            <button onClick={() => set('keyFacts', (form.keyFacts||[]).filter((_,j)=>j!==i))} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',fontSize:13}}>✕</button>
+          </div>
+        ))}
+        <div style={{display:'flex',gap:6}}>
+          <input value={newFact} onChange={e=>setNewFact(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newFact.trim()){set('keyFacts',[...(form.keyFacts||[]),newFact.trim()]);setNewFact('');}}} placeholder="Add a fact…" style={{flex:1}}/>
+          <button onClick={()=>{if(newFact.trim()){set('keyFacts',[...(form.keyFacts||[]),newFact.trim()]);setNewFact('');}}} style={{background:'var(--blue)',border:'none',borderRadius:var_rs,padding:'9px 14px',color:'#fff',cursor:'pointer',fontSize:'var(--fsm)'}}>+</button>
+        </div>
+        {(form.detectedPatterns||[]).length > 0 && (
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:'var(--fss)',color:'var(--t2)',marginBottom:8,fontFamily:"'DM Mono',monospace"}}>Detected patterns (AI)</div>
+            {form.detectedPatterns.map((p,i) => (
+              <div key={i} style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_rs,padding:'7px 11px',fontSize:'var(--fss)',color:'var(--t3)',marginBottom:4}}>{p}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Settings ────────────────────────────────── */
+function SettingsScreen({profile, onSaveProfile, phrases, onSavePhrases, largeText, onToggleLarge, qualLog, sessions, onDelSession, onBack}) {
+  const [tab, setTab] = useState('profile');
+  const [form, setForm] = useState({...profile});
+  const [phrList, setPhrList] = useState([...phrases]);
+  const [newPhr, setNewPhr] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    onSaveProfile(form);
+    onSavePhrases(phrList);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="screen">
+      <div className="topbar">
+        <button className="ibtn" onClick={onBack}>←</button>
+        <span style={{fontWeight:600,flex:1,fontSize:'var(--fsm)'}}>⚙️ Settings</span>
+        <button onClick={save} style={{background:saved?'var(--green-dim)':'var(--blue)',border:saved?'1px solid var(--green-line)':'none',borderRadius:var_rs,padding:'7px 14px',color:saved?'var(--green)':'#fff',fontWeight:600,cursor:'pointer',fontSize:'var(--fss)',minWidth:70,transition:'all .3s'}}>
+          {saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+      <div style={{display:'flex',gap:4,padding:'8px 12px',borderBottom:'1px solid var(--b1)',flexShrink:0,overflowX:'auto'}}>
+        {['profile','phrases','display','data'].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{padding:'5px 11px',background:tab===t?'var(--blue-dim)':'none',border:`1px solid ${tab===t?'var(--blue-line)':'var(--b1)'}`,borderRadius:var_rx,color:tab===t?'var(--blue)':'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',whiteSpace:'nowrap',textTransform:'capitalize'}}>{t}</button>
+        ))}
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 30px'}}>
+        {tab === 'profile' && <>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div>
+              <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>First name</label>
+              <input value={form.name?.split(' ')[0]||''} onChange={e=>setForm(f=>({...f,name:(e.target.value+' '+(f.name||'').split(' ').slice(1).join(' ')).trim()}))} placeholder="Marie"/>
+            </div>
+            <div>
+              <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Surname</label>
+              <input value={(form.name||'').split(' ').slice(1).join(' ')} onChange={e=>setForm(f=>({...f,name:((f.name||'').split(' ')[0]+' '+e.target.value).trim()}))} placeholder="Dubois"/>
+            </div>
+          </div>
+          <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Date of birth</label>
+          <input type="date" value={form.dob||''} onChange={e=>setForm(f=>({...f,dob:e.target.value}))} style={{marginBottom:12}}/>
+          <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Emergency contact name</label>
+          <input value={form.ecName||''} onChange={e=>setForm(f=>({...f,ecName:e.target.value}))} placeholder="Jean Dubois" style={{marginBottom:12}}/>
+          <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Emergency contact phone</label>
+          <input type="tel" value={form.ecPhone||''} onChange={e=>setForm(f=>({...f,ecPhone:e.target.value}))} placeholder="+33 6 12 34 56 78" style={{marginBottom:12}}/>
+          <label style={{fontSize:'var(--fss)',color:'var(--t2)',display:'block',marginBottom:4}}>Medical notes (shown in SOS)</label>
+          <textarea value={form.medical||''} onChange={e=>setForm(f=>({...f,medical:e.target.value}))} placeholder="e.g. Profoundly deaf. Allergic to penicillin." rows={3} style={{resize:'none',lineHeight:1.5}}/>
+        </>}
+        {tab === 'phrases' && <>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:10,fontFamily:"'DM Mono',monospace"}}>Quick phrase bank</div>
+          {phrList.map((p, i) => (
+            <div key={i} style={{display:'flex',gap:6,marginBottom:7}}>
+              <input value={p} onChange={e=>setPhrList(l=>l.map((x,j)=>j===i?e.target.value:x))} style={{flex:1,fontSize:'var(--fsm)'}}/>
+              <button onClick={()=>setPhrList(l=>l.filter((_,j)=>j!==i))} style={{background:'none',border:'1px solid var(--b1)',borderRadius:var_rs,padding:'6px 9px',color:'var(--t3)',cursor:'pointer'}}>✕</button>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:6,marginTop:4}}>
+            <input value={newPhr} onChange={e=>setNewPhr(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newPhr.trim()){setPhrList(l=>[...l,newPhr.trim()]);setNewPhr('');}}} placeholder="Add a phrase…" style={{flex:1}}/>
+            <button onClick={()=>{if(newPhr.trim()){setPhrList(l=>[...l,newPhr.trim()]);setNewPhr('');}}} style={{background:'var(--blue)',border:'none',borderRadius:var_rs,padding:'9px 14px',color:'#fff',cursor:'pointer'}}>+</button>
+          </div>
+        </>}
+        {tab === 'display' && (
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'14px 15px'}}>
+            <div>
+              <div style={{fontWeight:600,marginBottom:3}}>Large text</div>
+              <div style={{fontSize:'var(--fss)',color:'var(--t3)'}}>Increases all font sizes</div>
+            </div>
+            <Toggle on={largeText} onToggle={onToggleLarge}/>
+          </div>
+        )}
+        {tab === 'data' && <>
+          <div style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'14px',marginBottom:14}}>
+            <div style={{fontWeight:600,marginBottom:3}}>{qualLog.length} retry events</div>
+            <div style={{fontSize:'var(--fss)',color:'var(--t3)',marginBottom:10}}>Every "Say again" tap is logged silently.</div>
+            <button onClick={()=>{try{navigator.clipboard.writeText(JSON.stringify(qualLog,null,2));alert('Copied!');}catch(e){alert(JSON.stringify(qualLog).slice(0,400));}}} style={{background:'var(--c2)',border:'1px solid var(--b2)',borderRadius:var_rs,padding:'6px 12px',color:'var(--t2)',fontSize:'var(--fss)',cursor:'pointer'}}>📋 Export JSON</button>
+          </div>
+          <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:8,fontFamily:"'DM Mono',monospace"}}>Session history ({sessions.length})</div>
+          {sessions.slice(0,20).map(s => (
+            <div key={s.id} style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'11px 13px',marginBottom:6,display:'flex',alignItems:'center',gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:'var(--fsm)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label||'Conversation'}</div>
+                <div style={{fontSize:'var(--fss)',color:'var(--t3)'}}>{s.ts ? new Date(s.ts).toLocaleDateString() : ''} · {(s.msgs||[]).length} messages</div>
+              </div>
+              <button onClick={()=>onDelSession(s.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 8px',color:'var(--t3)',cursor:'pointer',fontSize:13}}>🗑</button>
+            </div>
+          ))}
+          {sessions.length === 0 && <p style={{color:'var(--t3)',fontSize:'var(--fss)',textAlign:'center',padding:20}}>No sessions yet.</p>}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+/* ── People / Places list ────────────────────── */
+function ListScreen({items, type, onSelect, onEdit, onDel, onBack}) {
+  const [q, setQ] = useState('');
+  const filtered = items.filter(x => x.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="screen">
+      <div className="topbar">
+        <button className="ibtn" onClick={onBack}>←</button>
+        <span style={{fontWeight:600,flex:1,fontSize:'var(--fsm)'}}>{type==='person'?'👥 People':'📍 Places'} ({items.length})</span>
+      </div>
+      <div style={{padding:'8px 13px',borderBottom:'1px solid var(--b1)',flexShrink:0}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder={`Search ${type==='person'?'people':'places'}…`}/>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'10px 12px',display:'flex',flexDirection:'column',gap:6}}>
+        {filtered.map(item => (
+          <div key={item.id} style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'12px 14px',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:'1.1rem'}}>{type==='person'?'👤':'📍'}</span>
+            <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>onEdit(item)}>
+              <div style={{fontWeight:600,fontSize:'var(--fsm)'}}>{item.name}</div>
+              <div style={{fontSize:'var(--fss)',color:'var(--t3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{type==='person'?(item.communicationStyle||item.relationship||`${item.conversationCount||0} chats`):(item.type||`${item.visitCount||0} visits`)}</div>
+            </div>
+            <button onClick={()=>onSelect(item)} style={{background:type==='person'?'var(--blue-dim)':'var(--green-dim)',border:`1px solid ${type==='person'?'var(--blue-line)':'var(--green-line)'}`,borderRadius:var_rs,padding:'6px 10px',color:type==='person'?'var(--blue)':'var(--green)',fontSize:'var(--fss)',cursor:'pointer',flexShrink:0}}>
+              {type==='person'?'Chat':'Visit'}
+            </button>
+            <button onClick={()=>onDel(item.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:var_rs,padding:'6px 8px',color:'var(--t3)',cursor:'pointer',fontSize:13}}>✕</button>
+          </div>
+        ))}
+        {filtered.length === 0 && (
+          <div style={{textAlign:'center',padding:28,color:'var(--t3)',fontSize:'var(--fss)',border:'1px dashed var(--b1)',borderRadius:var_r}}>
+            No {type==='person'?'people':'places'} yet.<br/>Added automatically during conversations.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Home screen ─────────────────────────────── */
+function HomeScreen({profile, people, places, ambLevel, onQuick, onStart, goTo, onShowEnv}) {
+  const [tab, setTab] = useState('people');
+  const initials = profile.name ? profile.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() : '?';
+  const recent = useMemo(() => {
+    const ppl = [...people].sort((a,b)=>new Date(b.lastSeen||0)-new Date(a.lastSeen||0)).slice(0,2);
+    const pls = [...places].sort((a,b)=>new Date(b.lastVisited||0)-new Date(a.lastVisited||0)).slice(0,2);
+    return {ppl, pls};
+  }, [people, places]);
+
+  return (
+    <div className="screen">
+      <div className="topbar">
+        <div style={{flex:1,display:'flex',alignItems:'center',gap:8}}>
+          <span style={{width:7,height:7,borderRadius:'50%',background:'var(--blue)',boxShadow:'0 0 9px var(--blue)',display:'inline-block'}}/>
+          <span style={{fontWeight:700,fontSize:'var(--fss)',letterSpacing:'.2em',textTransform:'uppercase',color:'var(--blue)'}}>VoiceBridge</span>
+        </div>
+        <AmbDot level={ambLevel} onClick={onShowEnv}/>
+        <div style={{width:30,height:30,borderRadius:'50%',background:'var(--blue-dim)',border:'1.5px solid var(--blue-line)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.62rem',fontWeight:700,color:'var(--blue)'}}>{initials}</div>
+        <button className="ibtn" onClick={()=>goTo('settings')}>⚙️</button>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 13px 30px',display:'flex',flexDirection:'column',gap:12}}>
+        <button onClick={onQuick} style={{background:'linear-gradient(135deg,var(--blue-dim),rgba(77,138,240,.06))',border:'1.5px solid var(--blue-line)',borderRadius:var_r,padding:'18px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:14,textAlign:'left',width:'100%'}}>
+          <span style={{fontSize:'1.9rem'}}>💬</span>
+          <div>
+            <div style={{fontSize:'var(--fsl)',fontWeight:700,color:'var(--blue)',marginBottom:2}}>Quick Start</div>
+            <div style={{fontSize:'var(--fss)',color:'var(--t3)'}}>Begin a conversation instantly</div>
+          </div>
+          <span style={{marginLeft:'auto',color:'var(--blue)',fontSize:'1.2rem'}}>›</span>
+        </button>
+
+        {(recent.ppl.length > 0 || recent.pls.length > 0) && (
+          <div>
+            <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:8,fontFamily:"'DM Mono',monospace"}}>Recent</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+              {recent.ppl.map(p => (
+                <button key={p.id} onClick={()=>onStart(p,null)} style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'11px 12px',display:'flex',alignItems:'center',gap:8,textAlign:'left',cursor:'pointer',width:'100%'}}>
+                  <span>👤</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:'var(--fsm)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                    <div style={{fontSize:'var(--fss)',color:'var(--t3)'}}>{p.conversationCount||0} chats</div>
+                  </div>
+                </button>
+              ))}
+              {recent.pls.map(p => (
+                <button key={p.id} onClick={()=>onStart(null,p)} style={{background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'11px 12px',display:'flex',alignItems:'center',gap:8,textAlign:'left',cursor:'pointer',width:'100%'}}>
+                  <span>📍</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:'var(--fsm)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                    <div style={{fontSize:'var(--fss)',color:'var(--t3)'}}>{p.visitCount||0} visits</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            {['people','places'].map(t => (
+              <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:'7px',background:tab===t?'var(--blue-dim)':'var(--c1)',border:`1px solid ${tab===t?'var(--blue-line)':'var(--b1)'}`,borderRadius:var_rs,color:tab===t?'var(--blue)':'var(--t3)',fontSize:'var(--fss)',fontWeight:600,cursor:'pointer',textTransform:'uppercase',letterSpacing:'.07em'}}>
+                {t==='people'?`👥 People (${people.length})`:`📍 Places (${places.length})`}
+              </button>
+            ))}
+          </div>
+          <button onClick={()=>goTo(tab)} style={{width:'100%',background:'transparent',border:'1px dashed var(--b2)',borderRadius:var_r,padding:'9px',color:'var(--t3)',fontSize:'var(--fsm)',cursor:'pointer',marginBottom:6}}>
+            {tab==='people'?'View all people →':'View all places →'}
+          </button>
+          {(tab==='people'?people:places).slice(0,5).map(item => (
+            <button key={item.id} onClick={()=>tab==='people'?onStart(item,null):onStart(null,item)} style={{width:'100%',background:'var(--c1)',border:'1px solid var(--b1)',borderRadius:var_r,padding:'11px 13px',display:'flex',alignItems:'center',gap:10,textAlign:'left',cursor:'pointer',marginBottom:5}}>
+              <span style={{fontSize:'1.1rem'}}>{tab==='people'?'👤':'📍'}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:'var(--fsm)'}}>{item.name}</div>
+                <div style={{fontSize:'var(--fss)',color:'var(--t3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {tab==='people'?(item.communicationStyle||item.relationship||'No details yet'):(item.type||'No details yet')}
+                </div>
+              </div>
+              <span style={{color:'var(--t3)'}}>›</span>
+            </button>
+          ))}
+          {(tab==='people'?people:places).length===0 && (
+            <div style={{textAlign:'center',color:'var(--t3)',fontSize:'var(--fss)',padding:16,border:'1px dashed var(--b1)',borderRadius:var_r}}>Added automatically during conversations.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Conversation screen ─────────────────────── */
+function ConvScreen({profile, allPeople, allPlaces, initPerson, initPlace, onEnd, ambLevel, onShowEnv}) {
+  const DEFAULT_PHRASES = ['Could you repeat that please?','Please speak more slowly.','I understand, thank you.','One moment please.','I am deaf — please read my screen.','Yes, that is correct.','No, let me clarify.','Please write it down.'];
+
+  const [msgs, setMsgs] = useState([]);
+  const [person, setPerson] = useState(initPerson || null);
+  const [place, setPlace] = useState(initPlace || null);
+  const [input, setInput] = useState('');
+  const [preds, setPreds] = useState([]);
+  const [sugs, setSugs] = useState([]);
+  const [showSugs, setShowSugs] = useState(false);
+  const [showPhrases, setShowPhrases] = useState(false);
+  const [phrases, setPhrases] = useState(DEFAULT_PHRASES);
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [recOn, setRecOn] = useState(true);
+  const [status, setStatus] = useState('ready');
+  const [pDrop, setPDrop] = useState(false);
+  const [plDrop, setPlDrop] = useState(false);
+  const [pQ, setPQ] = useState('');
+  const [plQ, setPlQ] = useState('');
+  const [newPN, setNewPN] = useState('');
+  const [newPlN, setNewPlN] = useState('');
+  const [showSOS, setShowSOS] = useState(false);
+  const [showScrn, setShowScrn] = useState(false);
+  const [dlg, setDlg] = useState(null);
+  const [qualLog, setQualLog] = useState([]);
+
+  const chatEl = useRef(null);
+  const inputEl = useRef(null);
+  const recRef = useRef(null);
+  const sessId = useRef(uid());
+
+  useEffect(() => {
+    db_get('settings', 'phrases').then(r => { if (r && r.data) setPhrases(r.data); });
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => {};
+  }, []);
+
+  useEffect(() => {
+    if (chatEl.current) {
+      const el = chatEl.current;
+      setTimeout(() => el.scrollTo({top: el.scrollHeight, behavior:'smooth'}), 50);
+    }
+  }, [msgs]);
+
+  function addSys(text) {
+    setMsgs(m => [...m, {id:uid(), role:'system', text}]);
+  }
+
+  const statusColor = speaking ? 'var(--blue)' : listening ? 'var(--green)' : status.includes('✦') ? 'var(--gold)' : 'var(--t3)';
+
+  async function sendMsg(text) {
+    const t = (text || '').trim();
+    if (!t || busy) return;
+    setInput(''); setPreds([]); setShowSugs(false); setShowPhrases(false);
+    setBusy(true); setSpeaking(true); setStatus('🔊 Speaking…');
+    setMsgs(m => [...m, {id:uid(), role:'you', text:t}]);
+    await speak(t);
+    setSpeaking(false);
+    beginListen();
+  }
+
+  function beginListen() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { addSys('Speech recognition unavailable — use Chrome or Edge.'); setBusy(false); setStatus('ready'); return; }
+    stopListen();
+    const r = new SR();
+    r.continuous = true; r.interimResults = true; r.lang = 'en-US';
+    recRef.current = r;
+    let final = ''; let lastConf = 70; let silT = null;
+    const intId = uid();
+    setListening(true); setStatus('🎙 Listening…');
+    setMsgs(m => [...m, {id:intId, role:'them', text:'…', interim:true, conf:0}]);
+
+    r.onresult = e => {
+      clearTimeout(silT);
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript + ' ';
+          lastConf = Math.round((e.results[i][0].confidence || 0.7) * 100);
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      const disp = (final + interim).trim() || '…';
+      setMsgs(m => m.map(x => x.id === intId ? {...x, text:disp, conf:lastConf} : x));
+      silT = setTimeout(() => finishListen(intId, (final + interim).trim(), lastConf), 2500);
+    };
+    r.onerror = e => {
+      if (e.error === 'no-speech') return;
+      stopListen();
+      setMsgs(m => m.filter(x => x.id !== intId));
+      addSys('Could not hear. Tap 🎙 to try again.');
+      setBusy(false); setStatus('ready');
+    };
+    r.onend = () => {
+      if (listening && final.length < 2) { try { r.start(); } catch(e) {} }
+    };
+    try { r.start(); } catch(e) { setBusy(false); setStatus('ready'); }
+  }
+
+  function finishListen(intId, text, conf) {
+    stopListen();
+    if (!text || text === '…') {
+      setMsgs(m => m.filter(x => x.id !== intId));
+      setBusy(false); setStatus('ready'); return;
+    }
+    setMsgs(m => m.map(x => x.id === intId
+      ? {...x, text, interim:false, conf: conf || 70, latest:true}
+      : {...x, latest:false}
+    ));
+    fetchSugs(text);
+  }
+
+  function stopListen() {
+    try { recRef.current && recRef.current.stop(); } catch(e) {}
+    recRef.current = null; setListening(false); setStatus('ready');
+  }
+
+  function toggleListen() {
+    if (listening) { stopListen(); setBusy(false); }
+    else { setBusy(true); beginListen(); }
+  }
+
+  function sayAgain(msgId) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    stopListen(); setBusy(true); setListening(true); setStatus('🎙 Say again…');
+    const r = new SR(); r.continuous = false; r.interimResults = false; r.lang = 'en-US';
+    recRef.current = r;
+    r.onresult = e => {
+      const newT = e.results[0][0].transcript;
+      const newC = Math.round((e.results[0][0].confidence || 0.7) * 100);
+      setMsgs(m => {
+        const orig = m.find(x => x.id === msgId);
+        const entry = {id:uid(), ts:new Date().toISOString(), orig:{text:orig&&orig.text, conf:orig&&orig.conf}, repl:{text:newT, conf:newC}, delta:newC - ((orig&&orig.conf)||0)};
+        setQualLog(q => [...q, entry]);
+        db_put('quality', entry);
+        return m.map(x => x.id === msgId ? {...x, struck:x.text, struckScore:x.conf, text:newT, conf:newC} : x);
+      });
+      stopListen(); setBusy(false);
+    };
+    r.onerror = () => { stopListen(); setBusy(false); };
+    try { r.start(); } catch(e) { stopListen(); setBusy(false); }
+  }
+
+  async function fetchSugs(theirMsg) {
+    setStatus('✦ Thinking…');
+    const hist = msgs.slice(-8).filter(m => !m.interim && m.role !== 'system').map(m => `${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+    const pCtx = [profile.name && `User: ${profile.name}`, profile.medical && `Medical: ${profile.medical}`].filter(Boolean).join('. ');
+    const perCtx = person ? `Talking to: ${person.name}. Style: ${person.communicationStyle||''}. Facts: ${(person.keyFacts||[]).slice(0,3).join(', ')}` : '';
+    const plCtx = place ? `Location: ${place.name} (${place.type||''}). Topics: ${(place.commonTopics||[]).slice(0,3).join(', ')}` : '';
+    const prompt = `You are a real-time reply assistant for a deaf/non-speaking person.\n${pCtx?`About user: ${pCtx}\n`:''}${perCtx?`${perCtx}\n`:''}${plCtx?`${plCtx}\n`:''}\nConversation so far:\n${hist}\n\nThey just said: "${theirMsg}"\n\nGive exactly 3 short reply options that DIRECTLY respond to "${theirMsg}". Max 18 words each. Varied (agreement, clarification, action). Return ONLY a JSON array of 3 strings. No markdown, no explanation.`;
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({model:'claude-haiku-4-5-20251001', max_tokens:250, messages:[{role:'user',content:prompt}]})
+      });
+      const data = await res.json();
+      const raw = (data.content && data.content[0] && data.content[0].text) || '[]';
+      let s;
+      try { s = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+      catch(e) { s = fallback(theirMsg); }
+      setSugs(Array.isArray(s) ? s.slice(0,3) : fallback(theirMsg));
+      setShowSugs(true);
+    } catch(e) {
+      setSugs(fallback(theirMsg));
+      setShowSugs(true);
+    }
+    setBusy(false); setStatus('ready');
+  }
+
+  function fallback(last) {
+    const l = last.toLowerCase();
+    if (l.includes('?')) return ['Yes, that is correct.','No, let me explain.','Could you repeat that?'];
+    if (l.includes('sorry')) return ['No worries at all.','That is okay.','Please do not worry.'];
+    return ['I understand, thank you.','Could you clarify that?','One moment please.'];
+  }
+
+  async function endAndSave(messages) {
+    if (messages.length > 0) {
+      const tx = messages.filter(m=>m.role!=='system').map(m=>`${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({model:'claude-haiku-4-5-20251001', max_tokens:350, messages:[{role:'user',content:`Extract contact insights. JSON only: {"keyFacts":[],"patterns":[],"topics":[],"communicationStyle":""}.\n\n${tx}`}]})
+        });
+        const data = await res.json();
+        const raw = (data.content && data.content[0] && data.content[0].text) || '{}';
+        let ins; try { ins = JSON.parse(raw.replace(/```json|```/g,'').trim()); } catch(e) { ins = {}; }
+        if (person) {
+          await db_put('people', {...person, keyFacts:[...new Set([...(person.keyFacts||[]),...(ins.keyFacts||[])].slice(0,20))], detectedPatterns:[...new Set([...(person.detectedPatterns||[]),...(ins.patterns||[])].slice(0,10))], communicationStyle:ins.communicationStyle||person.communicationStyle||'', lastSeen:new Date().toISOString(), conversationCount:(person.conversationCount||0)+1});
+        }
+        if (place) {
+          await db_put('places', {...place, commonTopics:[...new Set([...(place.commonTopics||[]),...(ins.topics||[])].slice(0,20))], lastVisited:new Date().toISOString(), visitCount:(place.visitCount||0)+1});
+        }
+      } catch(e) {}
+      await db_put('sessions', {id:sessId.current, label:(person&&person.name)||(place&&place.name)||'Conversation', msgs:messages, ts:new Date().toISOString()});
+    }
+    onEnd();
+  }
+
+  function doSplit() {
+    const seg = msgs.filter(m=>m.role!=='system');
+    if (seg.length > 0) db_put('sessions', {id:uid(), label:(person&&person.name)||'Intersession', msgs:seg, ts:new Date().toISOString()});
+    setMsgs(m => [...m, {id:uid(), role:'system', text:`─── New person · ${(place&&place.name)||'same place'} ───`}]);
+    setPerson(null); setSugs([]); setShowSugs(false); setBusy(false); stopListen();
+  }
+
+  function mkPerson(name) { const p={id:uid(),name,relationship:'',communicationStyle:'',keyFacts:[],detectedPatterns:[],conversationCount:0,lastSeen:new Date().toISOString(),notes:''}; db_put('people',p); return p; }
+  function mkPlace(name) { const p={id:uid(),name,type:'',commonTopics:[],visitCount:0,lastVisited:new Date().toISOString(),notes:''}; db_put('places',p); return p; }
+
+  const PRED_WORDS = ['I','the','a','is','are','was','have','can','could','would','will','please','thank','sorry','need','want','help','yes','no','okay','hello'];
+  function updatePreds(val) {
+    const parts = val.split(/\s+/);
+    const last = parts[parts.length-1].toLowerCase();
+    if (!last || val.endsWith(' ')) { setPreds([]); return; }
+    setPreds(PRED_WORDS.filter(w => w.toLowerCase().startsWith(last) && w.toLowerCase() !== last).slice(0,4));
+  }
+  function tapPred(w) {
+    const parts = input.split(/\s+/);
+    parts[parts.length-1] = w;
+    setInput(parts.join(' ') + ' ');
+    setPreds([]);
+    if (inputEl.current) inputEl.current.focus();
+  }
+
+  function editMsg(id, text) { setMsgs(m => m.map(x => x.id===id ? {...x,text} : x)); }
+  function delMsg(id) { setMsgs(m => m.filter(x => x.id!==id)); }
+  function flagMsg(id) { setMsgs(m => m.map(x => x.id===id ? {...x,flagged:!x.flagged} : x)); }
+  function exportChat() {
+    const lines = msgs.filter(m=>m.role!=='system').map(m=>`[${m.role.toUpperCase()}] ${m.text}`).join('\n');
+    try { navigator.clipboard.writeText(lines); addSys('✓ Copied to clipboard.'); }
+    catch(e) { alert(lines); }
+  }
+
+  const latestIdx = useMemo(() => { let l=-1; msgs.forEach((m,i)=>{if(m.role==='them'&&!m.interim)l=i;}); return l; }, [msgs]);
+  const filtPpl = allPeople.filter(p=>p.name.toLowerCase().includes(pQ.toLowerCase()));
+  const filtPls = allPlaces.filter(p=>p.name.toLowerCase().includes(plQ.toLowerCase()));
+
+  function DropDown({show, search, onSearch, items, onPick, newVal, setNewVal, onCreate, onClear}) {
+    if (!show) return null;
+    return (
+      <div style={{position:'absolute',top:'calc(100% + 3px)',left:0,background:'var(--c2)',border:'1px solid var(--b2)',borderRadius:var_rs,padding:8,zIndex:60,minWidth:190,maxHeight:210,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.6)'}}>
+        <input value={search} onChange={e=>onSearch(e.target.value)} placeholder="Search…" style={{marginBottom:6,fontSize:'var(--fss)'}}/>
+        {items.map(p => <button key={p.id} onClick={()=>onPick(p)} style={{display:'block',width:'100%',textAlign:'left',background:'none',border:'none',padding:'5px 7px',color:'var(--t1)',fontSize:'var(--fss)',cursor:'pointer',borderRadius:4}}>{p.name}</button>)}
+        <div style={{display:'flex',gap:5,marginTop:5}}>
+          <input value={newVal} onChange={e=>setNewVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newVal.trim())onCreate(newVal.trim());}} placeholder="New…" style={{flex:1,fontSize:'var(--fss)'}}/>
+          <button onClick={()=>newVal.trim()&&onCreate(newVal.trim())} style={{background:'var(--blue)',border:'none',borderRadius:4,padding:'5px 9px',color:'#fff',fontSize:'var(--fss)',cursor:'pointer'}}>+</button>
+        </div>
+        <button onClick={onClear} style={{display:'block',width:'100%',textAlign:'left',background:'none',border:'none',padding:'5px 7px',color:'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',marginTop:3}}>✕ Clear</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="screen">
+        {/* Top bar */}
+        <div className="topbar">
+          <button className="ibtn" onClick={()=>setDlg({msg:'End this session?',ok:'End session',onOk:()=>{endAndSave(msgs);setDlg(null);}})}>←</button>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:600,fontSize:'var(--fsm)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(person&&person.name)||(place&&place.name)||'Conversation'}</div>
+            <div style={{fontSize:'var(--fss)',color:'var(--t3)',display:'flex',alignItems:'center',gap:5,marginTop:1}}>
+              <div style={{width:5,height:5,borderRadius:'50%',background:statusColor,animation:(speaking||listening)?'pulse 0.7s infinite':'none',transition:'background .3s',flexShrink:0}}/>
+              {status}
+            </div>
+          </div>
+          <AmbDot level={ambLevel} onClick={onShowEnv}/>
+          <button className="ibtn" onClick={()=>setShowScrn(true)} title="Show Screen">🃏</button>
+          <button className="ibtn" onClick={()=>setShowSOS(true)} style={{borderColor:'var(--red-line)',color:'var(--red)'}} title="SOS">🆘</button>
+        </div>
+
+        {/* Context bar */}
+        <div style={{display:'flex',alignItems:'center',gap:5,padding:'5px 11px',borderBottom:'1px solid var(--b1)',background:'var(--c1)',flexShrink:0,flexWrap:'wrap',position:'relative',zIndex:20}}>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>{setPlDrop(!plDrop);setPDrop(false);}} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:16,border:`1px solid ${place?'var(--green-line)':'var(--b1)'}`,background:place?'var(--green-dim)':'none',color:place?'var(--green)':'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',whiteSpace:'nowrap'}}>
+              📍 {(place&&place.name)||'Place'} ▾
+            </button>
+            <DropDown show={plDrop} search={plQ} onSearch={setPlQ} items={filtPls}
+              onPick={p=>{setPlace(p);setPlDrop(false);}} newVal={newPlN} setNewVal={setNewPlN}
+              onCreate={n=>{setPlace(mkPlace(n));setNewPlN('');setPlDrop(false);}}
+              onClear={()=>{setPlace(null);setPlDrop(false);}}/>
+          </div>
+          <div style={{position:'relative'}}>
+            <button onClick={()=>{setPDrop(!pDrop);setPlDrop(false);}} style={{display:'inline-flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:16,border:`1px solid ${person?'var(--blue-line)':'var(--b1)'}`,background:person?'var(--blue-dim)':'none',color:person?'var(--blue)':'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',whiteSpace:'nowrap'}}>
+              👤 {(person&&person.name)||'Person'} ▾
+            </button>
+            <DropDown show={pDrop} search={pQ} onSearch={setPQ} items={filtPpl}
+              onPick={p=>{setPerson(p);setPDrop(false);}} newVal={newPN} setNewVal={setNewPN}
+              onCreate={n=>{setPerson(mkPerson(n));setNewPN('');setPDrop(false);}}
+              onClear={()=>{setPerson(null);setPDrop(false);}}/>
+          </div>
+          <div style={{flex:1}}/>
+          {[
+            [recOn?'🔴':'⚫', ()=>setRecOn(!recOn), recOn?'var(--red)':'var(--t3)'],
+            ['✂️', doSplit, 'var(--t3)'],
+            ['🔄', ()=>setDlg({msg:'End session and start fresh?',ok:'New chat',onOk:()=>{endAndSave(msgs);setDlg(null);}}), 'var(--t3)'],
+            ['📋', exportChat, 'var(--t3)'],
+          ].map(([ico, fn, col], i) => (
+            <button key={i} onClick={fn} style={{background:'none',border:'1px solid var(--b1)',borderRadius:16,padding:'3px 9px',color:col,fontSize:'var(--fss)',cursor:'pointer',whiteSpace:'nowrap'}}>{ico}</button>
+          ))}
+        </div>
+
+        {/* Chat */}
+        <div ref={chatEl} style={{flex:1,overflowY:'auto',padding:'12px 12px',display:'flex',flexDirection:'column',gap:9}}>
+          {msgs.length === 0 && (
+            <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:8,color:'var(--t3)',textAlign:'center',padding:30}}>
+              <span style={{fontSize:'2rem',opacity:.25}}>💬</span>
+              <span style={{fontSize:'var(--fsm)',lineHeight:1.7}}>Type a message or tap 🎙<br/>It will be spoken aloud.</span>
+            </div>
+          )}
+          {msgs.map((msg, i) => (
+            <Bubble key={msg.id} msg={msg} isLatest={i===latestIdx}
+              onSayAgain={() => sayAgain(msg.id)}
+              onSpeak={text => speak(text)}
+              onDelete={delMsg} onFlag={flagMsg} onEdit={editMsg}
+              placeName={(place&&place.name)||''}
+            />
+          ))}
+        </div>
+
+        {/* Bottom */}
+        <div style={{flexShrink:0,background:'var(--c1)',borderTop:'1px solid var(--b1)'}}>
+          {status.includes('✦') && (
+            <div style={{padding:'7px 13px 0',display:'flex',flexDirection:'column',gap:3}}>
+              {['68%','44%'].map((w,i)=>(
+                <div key={i} style={{height:7,width:w,borderRadius:4,background:'linear-gradient(90deg,var(--c2) 25%,var(--b2) 50%,var(--c2) 75%)',backgroundSize:'200% 100%',animation:'shimmer 1.3s infinite'}}/>
+              ))}
+            </div>
+          )}
+          {showSugs && sugs.length > 0 && (
+            <div style={{padding:'8px 12px 0'}}>
+              <div style={{fontSize:'var(--fss)',color:'var(--gold)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:5,fontFamily:"'DM Mono',monospace",display:'flex',alignItems:'center',gap:4}}>✦ Suggested</div>
+              {sugs.map((s, i) => (
+                <button key={i} onClick={()=>{setShowSugs(false);sendMsg(s);}} style={{width:'100%',background:'var(--c2)',border:'1px solid var(--b2)',borderRadius:var_rs,padding:'8px 12px',color:'var(--t1)',fontSize:'var(--fsm)',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',gap:8,marginBottom:4,lineHeight:1.45}}>
+                  {s}<span style={{marginLeft:'auto',color:'var(--t3)',flexShrink:0}}>›</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {showPhrases && (
+            <div style={{padding:'8px 12px 0',borderTop:'1px solid var(--b1)',maxHeight:130,overflowY:'auto'}}>
+              <div style={{fontSize:'var(--fss)',color:'var(--t3)',letterSpacing:'.08em',textTransform:'uppercase',marginBottom:5,fontFamily:"'DM Mono',monospace"}}>Phrases</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                {phrases.map((p,i)=>(
+                  <button key={i} onClick={()=>{setShowPhrases(false);sendMsg(p);}} style={{background:'var(--c2)',border:'1px solid var(--b1)',borderRadius:var_rs,color:'var(--t2)',fontSize:'var(--fss)',padding:'5px 10px',cursor:'pointer'}}>{p}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {preds.length > 0 && (
+            <div style={{display:'flex',gap:4,padding:'5px 12px 0',overflowX:'auto'}}>
+              {preds.map((w,i)=>(
+                <button key={i} onClick={()=>tapPred(w)} style={{background:'var(--c2)',border:'1px solid var(--b1)',borderRadius:var_rs,color:'var(--t2)',fontSize:'var(--fss)',padding:'4px 9px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{w}</button>
+              ))}
+            </div>
+          )}
+          <div style={{padding:'7px 11px 14px',display:'flex',gap:7,alignItems:'flex-end'}}>
+            <button onClick={()=>{setShowPhrases(!showPhrases);setShowSugs(false);}} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',height:42,padding:'0 11px',borderRadius:20,border:`1px solid ${showPhrases?'var(--blue-line)':'var(--b1)'}`,background:showPhrases?'var(--blue-dim)':'none',color:showPhrases?'var(--blue)':'var(--t3)',fontSize:'var(--fss)',cursor:'pointer',flexShrink:0}}>⚡</button>
+            <div style={{flex:1,background:'var(--c2)',border:'1px solid var(--b2)',borderRadius:var_r,display:'flex',alignItems:'flex-end',padding:'2px 5px 2px 11px',gap:3}}>
+              <textarea
+                ref={inputEl}
+                value={input}
+                onChange={e => {
+                  setInput(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 88) + 'px';
+                  updatePreds(e.target.value);
+                }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(input); } }}
+                placeholder="Type your message…"
+                rows={1}
+                style={{flex:1,background:'none',border:'none',outline:'none',resize:'none',maxHeight:88,lineHeight:1.45,padding:'9px 0',color:'var(--t1)',fontSize:'var(--fs)'}}
+              />
+              <button
+                onClick={() => sendMsg(input)}
+                disabled={busy || !input.trim()}
+                style={{background:'var(--blue)',border:'none',borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.8rem',marginBottom:3,cursor:(busy||!input.trim())?'not-allowed':'pointer',color:'#fff',opacity:(busy||!input.trim())?0.38:1,transition:'opacity .2s',flexShrink:0}}
+              >▶</button>
+            </div>
+            <button
+              onClick={toggleListen}
+              disabled={speaking}
+              style={{background:'var(--green-dim)',border:`1.5px solid ${listening?'var(--green)':'var(--green-line)'}`,borderRadius:var_r,width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1rem',cursor:speaking?'not-allowed':'pointer',animation:listening?'glow 1.4s infinite':'none',opacity:speaking?0.45:1,transition:'border-color .2s',flexShrink:0}}
+            >🎙</button>
+          </div>
+        </div>
+      </div>
+
+      {showSOS && <SOSScreen profile={profile} onClose={()=>setShowSOS(false)}/>}
+      {showScrn && <ShowScreen profile={profile} onClose={()=>setShowScrn(false)}/>}
+      {dlg && <Confirm msg={dlg.msg} okLabel={dlg.ok} danger={!!dlg.danger} onOk={dlg.onOk} onCancel={()=>setDlg(null)}/>}
+    </>
+  );
+}
+
+/* ── ROOT APP ────────────────────────────────── */
+function App() {
+  const [ready, setReady] = useState(false);
+  const [screen, setScreen] = useState('home');
+  const [prev, setPrev] = useState('home');
+  const [profile, setProfile] = useState({name:'',dob:'',ecName:'',ecPhone:'',medical:''});
+  const [phrases, setPhrases] = useState(['Could you repeat that please?','Please speak more slowly.','I understand, thank you.','One moment please.','I am deaf — please read my screen.','Please write it down.','Yes, that is correct.','No, let me clarify.']);
+  const [people, setPeople] = useState([]);
+  const [places, setPlaces] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [qualLog, setQualLog] = useState([]);
+  const [largeText, setLargeText] = useState(false);
+  const [convPerson, setConvPerson] = useState(null);
+  const [convPlace, setConvPlace] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [editType, setEditType] = useState(null);
+  const [showEnv, setShowEnv] = useState(false);
+  const [dlg, setDlg] = useState(null);
+  // ambient
+  const [ambLevel, setAmbLevel] = useState(0);
+  const [ambVol, setAmbVol] = useState(0);
+  const [ambTx, setAmbTx] = useState([]);
+  const [ambAlerts, setAmbAlerts] = useState([]);
+  const [sndLevels, setSndLevels] = useState({});
+  const ambCtx = useRef(null);
+  const ambAnim = useRef(null);
+  const ambRec = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, ph, pp, pl, ss, ql, lt] = await Promise.all([
+          db_get('settings','profile'), db_get('settings','phrases'),
+          db_all('people'), db_all('places'), db_all('sessions'), db_all('quality'),
+          db_get('settings','largeText')
+        ]);
+        if (p && p.data) setProfile(p.data);
+        if (ph && ph.data) setPhrases(ph.data);
+        setPeople(pp || []); setPlaces(pl || []); setSessions(ss || []); setQualLog(ql || []);
+        if (lt && lt.data) setLargeText(lt.data);
+      } catch(e) { console.warn('DB load error:', e); }
+      setReady(true);
+    })();
+    if (window.speechSynthesis) window.speechSynthesis.onvoiceschanged = () => {};
+    startAmb();
+    return stopAmb;
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--fs', largeText ? '17px' : '15px');
+    document.documentElement.style.setProperty('--fsm', largeText ? '15px' : '13px');
+    document.documentElement.style.setProperty('--fss', largeText ? '13px' : '11px');
+    document.documentElement.style.setProperty('--fsl', largeText ? '19px' : '17px');
+  }, [largeText]);
+
+  function startAmb() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const an = ctx.createAnalyser(); an.fftSize = 256;
+      ctx.createMediaStreamSource(stream).connect(an);
+      ambCtx.current = {ctx, an, stream};
+      const buf = new Uint8Array(an.frequencyBinCount);
+      let fc = 0;
+      function tick() {
+        ambAnim.current = requestAnimationFrame(tick);
+        an.getByteFrequencyData(buf);
+        const avg = buf.reduce((a,b)=>a+b,0) / buf.length;
+        const vol = Math.round(avg / 2.55);
+        setAmbVol(vol);
+        const vSlice = Array.from(buf.slice(3,30));
+        const vAvg = vSlice.reduce((a,b)=>a+b,0) / vSlice.length;
+        const isV = vAvg > 30 && vol > 25;
+        let lvl = 0;
+        if (vol > 5) lvl = 1;
+        if (vol > 20) lvl = 2;
+        if (vol > 40) lvl = 3;
+        if (isV) lvl = Math.max(lvl, 3);
+        if (vol > 65) lvl = 4;
+        setAmbLevel(lvl);
+        fc++;
+        if (fc % 15 === 0) setSndLevels({voice: isV ? Math.min(100,Math.round(vAvg*2)) : 0, music: vol>15&&!isV ? Math.min(100,vol) : 0});
+      }
+      tick();
+      startNameDet();
+    }).catch(() => {});
+  }
+
+  function stopAmb() {
+    if (ambAnim.current) cancelAnimationFrame(ambAnim.current);
+    if (ambCtx.current && ambCtx.current.stream) ambCtx.current.stream.getTracks().forEach(t => t.stop());
+    try { ambRec.current && ambRec.current.stop(); } catch(e) {}
+  }
+
+  function startNameDet() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = 'en-US';
+    r.onresult = e => {
+      const t = Array.from(e.results).map(r=>r[0].transcript).join(' ');
+      const fn = (profile.name||'').split(' ')[0].toLowerCase();
+      if (fn && fn.length > 1 && t.toLowerCase().includes(fn)) {
+        setAmbLevel(5);
+        setAmbAlerts(a => [{id:uid(), time:new Date().toLocaleTimeString(), text:`Your name was spoken nearby`}, ...a].slice(0,30));
+      }
+      if (e.results[e.results.length-1].isFinal) {
+        const fin = e.results[e.results.length-1][0];
+        setAmbTx(tx => [{id:uid(), time:new Date().toLocaleTimeString(), text:fin.transcript, conf:Math.round((fin.confidence||0.5)*100)}, ...tx].slice(0,80));
+      }
+    };
+    r.onerror = () => {};
+    r.onend = () => setTimeout(startNameDet, 2000);
+    ambRec.current = r;
+    try { r.start(); } catch(e) {}
+  }
+
+  async function saveProfile(p) { setProfile(p); await db_put('settings', {id:'profile', data:p}); }
+  async function savePhrases(ph) { setPhrases(ph); await db_put('settings', {id:'phrases', data:ph}); }
+  async function saveLarge(v) { setLargeText(v); await db_put('settings', {id:'largeText', data:v}); }
+
+  function go(s) { setPrev(screen); setScreen(s); }
+  function back() { setScreen(prev || 'home'); }
+  function startConv(person, place) { setConvPerson(person||null); setConvPlace(place||null); setPrev(screen); setScreen('conv'); }
+
+  function onConvEnd() {
+    db_all('people').then(setPeople);
+    db_all('places').then(setPlaces);
+    db_all('sessions').then(setSessions);
+    setScreen('home');
+  }
+
+  async function savePersonEdit(u) { setPeople(pp => pp.map(x=>x.id===u.id?u:x)); await db_put('people',u); back(); }
+  async function savePlaceEdit(u) { setPlaces(pl => pl.map(x=>x.id===u.id?u:x)); await db_put('places',u); back(); }
+  async function delPerson(id) { setPeople(pp => pp.filter(x=>x.id!==id)); await db_del('people',id); }
+  async function delPlace(id) { setPlaces(pl => pl.filter(x=>x.id!==id)); await db_del('places',id); }
+  async function delSession(id) { setSessions(ss => ss.filter(s=>s.id!==id)); await db_del('sessions',id); }
+
+  if (!ready) return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,background:'var(--bg)'}}>
+      <div style={{width:26,height:26,border:'2px solid var(--b2)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+      <span style={{color:'var(--t3)',fontSize:'var(--fss)',letterSpacing:'.12em',fontFamily:"'DM Mono',monospace"}}>LOADING…</span>
+    </div>
+  );
+
+  return (
+    <div style={{height:'100%',position:'relative'}}>
+      {screen === 'home' && (
+        <HomeScreen profile={profile} people={people} places={places} ambLevel={ambLevel}
+          onQuick={() => startConv(null, null)}
+          onStart={(p, pl) => startConv(p, pl)}
+          goTo={go}
+          onShowEnv={() => setShowEnv(true)}
+        />
+      )}
+      {screen === 'conv' && (
+        <ConvScreen profile={profile} allPeople={people} allPlaces={places} initPerson={convPerson} initPlace={convPlace}
+          onEnd={onConvEnd} ambLevel={ambLevel} onShowEnv={() => setShowEnv(true)}
+        />
+      )}
+      {screen === 'people' && (
+        <ListScreen items={people} type="person"
+          onSelect={p => startConv(p, null)}
+          onEdit={item => { setEditItem(item); setEditType('person'); go('edit'); }}
+          onDel={id => setDlg({msg:'Delete this person?', ok:'Delete', danger:true, onOk:()=>{delPerson(id);setDlg(null);}})}
+          onBack={back}
+        />
+      )}
+      {screen === 'places' && (
+        <ListScreen items={places} type="place"
+          onSelect={p => startConv(null, p)}
+          onEdit={item => { setEditItem(item); setEditType('place'); go('edit'); }}
+          onDel={id => setDlg({msg:'Delete this place?', ok:'Delete', danger:true, onOk:()=>{delPlace(id);setDlg(null);}})}
+          onBack={back}
+        />
+      )}
+      {screen === 'edit' && editItem && (
+        <ProfileEd item={editItem} type={editType}
+          onSave={editType==='person' ? savePersonEdit : savePlaceEdit}
+          onBack={back}
+        />
+      )}
+      {screen === 'settings' && (
+        <SettingsScreen profile={profile} onSaveProfile={saveProfile}
+          phrases={phrases} onSavePhrases={savePhrases}
+          largeText={largeText} onToggleLarge={() => saveLarge(!largeText)}
+          qualLog={qualLog} sessions={sessions}
+          onDelSession={id => setDlg({msg:'Delete this session?', ok:'Delete', danger:true, onOk:()=>{delSession(id);setDlg(null);}})}
+          onBack={back}
+        />
+      )}
+      {showEnv && (
+        <EnvScreen level={ambLevel} volume={ambVol} transcript={ambTx} alerts={ambAlerts} soundLevels={sndLevels} onClose={() => setShowEnv(false)}/>
+      )}
+      {dlg && <Confirm msg={dlg.msg} okLabel={dlg.ok} danger={!!dlg.danger} onOk={dlg.onOk} onCancel={() => setDlg(null)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
+</script>
+</body>
+</html>
