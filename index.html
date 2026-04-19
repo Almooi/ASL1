@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>VoiceBridge — Communication Aid</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0d11;
+  --surface: #12151c;
+  --surface2: #181c26;
+  --surface3: #1e2230;
+  --border: #232736;
+  --border2: #2c3148;
+  --text: #eaedf5;
+  --sub: #5c6478;
+  --sub2: #8b92a8;
+  --you: #4f8ef7;
+  --you-dim: #1a2a4a;
+  --you-border: rgba(79,142,247,0.3);
+  --them: #34d399;
+  --them-dim: #0a1f18;
+  --them-border: rgba(52,211,153,0.3);
+  --accent: #f4a83a;
+  --accent-dim: #221808;
+  --danger: #f87171;
+  --r: 12px;
+  --r-sm: 8px;
+  --r-xs: 6px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* ── SCREENS ── */
+.screen { display: none; flex-direction: column; height: 100vh; width: 100%; }
+.screen.active { display: flex; }
+
+/* ══════════════════════
+   SHARED TOPBAR
+══════════════════════ */
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.topbar-brand {
+  font-size: 0.78rem; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--you);
+  display: flex; align-items: center; gap: 7px;
+}
+.topbar-brand::before {
+  content: ''; display: inline-block;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--you); box-shadow: 0 0 10px var(--you);
+}
+.topbar-spacer { flex: 1; }
+.icon-btn {
+  background: none; border: 1px solid var(--border);
+  border-radius: var(--r-sm); color: var(--sub2);
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.icon-btn:hover { border-color: var(--text); color: var(--text); }
+
+/* ══════════════════════
+   SCENARIO SCREEN
+══════════════════════ */
+#scenarioScreen { background: var(--bg); }
+
+.scenario-hero {
+  padding: 32px 22px 26px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.scenario-headline {
+  font-family: 'Instrument Serif', serif;
+  font-size: 1.9rem; line-height: 1.2;
+  color: var(--text); margin-bottom: 7px;
+}
+.scenario-sub { font-size: 0.76rem; color: var(--sub2); line-height: 1.6; font-weight: 400; }
+
+.scenario-scroll {
+  flex: 1; overflow-y: auto;
+  padding: 20px 18px 32px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.scenario-scroll::-webkit-scrollbar { width: 3px; }
+.scenario-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.scenario-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px 18px;
+  cursor: pointer; display: flex; align-items: center; gap: 14px;
+  transition: border-color 0.2s, background 0.15s, transform 0.15s;
+}
+.scenario-card:hover { border-color: var(--you); background: var(--surface2); transform: translateX(3px); }
+.scenario-card:active { transform: translateX(3px) scale(0.99); }
+.sc-icon {
+  font-size: 1.5rem; width: 42px; height: 42px;
+  background: var(--surface2); border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.sc-info { flex: 1; }
+.sc-name { font-size: 0.9rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.sc-desc { font-size: 0.7rem; color: var(--sub2); line-height: 1.4; font-weight: 400; }
+.sc-arrow { color: var(--sub); font-size: 1rem; transition: color 0.2s; }
+.scenario-card:hover .sc-arrow { color: var(--you); }
+
+.divider-or {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--sub); font-size: 0.65rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.divider-or::before, .divider-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.free-btn {
+  background: transparent; border: 1px dashed var(--border2);
+  border-radius: var(--r); padding: 15px 18px;
+  color: var(--sub2); font-family: 'Syne', sans-serif;
+  font-size: 0.83rem; cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  text-align: left; display: flex; align-items: center; gap: 10px;
+}
+.free-btn:hover { border-color: var(--you); color: var(--you); }
+
+/* ══════════════════════
+   CONVERSATION SCREEN
+══════════════════════ */
+#convScreen { background: var(--bg); }
+
+.conv-topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.conv-meta { flex: 1; }
+.conv-title {
+  font-size: 0.88rem; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 7px;
+}
+.conv-status {
+  font-size: 0.62rem; color: var(--sub);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  margin-top: 2px; display: flex; align-items: center; gap: 5px;
+}
+.pip {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--sub); transition: background 0.3s;
+}
+.pip.listening { background: var(--them); animation: blink 0.7s infinite alternate; }
+.pip.speaking  { background: var(--you);  animation: blink 0.5s infinite alternate; }
+.pip.thinking  { background: var(--accent); animation: blink 0.9s infinite alternate; }
+@keyframes blink { from { opacity:1; } to { opacity:0.2; } }
+
+/* Chat log */
+.chat-log {
+  flex: 1; overflow-y: auto;
+  padding: 18px 16px; display: flex;
+  flex-direction: column; gap: 12px;
+  scroll-behavior: smooth;
+}
+.chat-log::-webkit-scrollbar { width: 3px; }
+.chat-log::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.msg { display: flex; flex-direction: column; max-width: 86%; animation: msgIn 0.22s ease forwards; opacity: 0; transform: translateY(6px); }
+@keyframes msgIn { to { opacity:1; transform:translateY(0); } }
+.msg.you    { align-self: flex-end;   align-items: flex-end; }
+.msg.them   { align-self: flex-start; align-items: flex-start; }
+.msg.system { align-self: center; align-items: center; max-width: 100%; }
+
+.msg-label { font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sub); margin-bottom: 4px; padding: 0 3px; }
+.msg.you  .msg-label { color: var(--you); }
+.msg.them .msg-label { color: var(--them); }
+
+.bubble {
+  padding: 11px 15px; border-radius: var(--r);
+  font-size: 0.91rem; font-weight: 400; line-height: 1.5; word-break: break-word;
+}
+.msg.you  .bubble { background: var(--you-dim);  border: 1px solid var(--you-border);  border-bottom-right-radius: 4px; color: #bdd5ff; }
+.msg.them .bubble { background: var(--them-dim); border: 1px solid var(--them-border); border-bottom-left-radius: 4px;  color: #9fedd4; }
+.msg.system .bubble {
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 0.72rem; color: var(--sub2);
+  padding: 7px 14px; border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Listening indicator */
+.listen-bubble {
+  background: var(--them-dim); border: 1px solid var(--them-border);
+  border-radius: var(--r); border-bottom-left-radius: 4px;
+  padding: 13px 16px; display: flex; align-items: center; gap: 5px;
+}
+.ldot { width: 7px; height: 7px; border-radius: 50%; background: var(--them); animation: lb 1.2s infinite; }
+.ldot:nth-child(2) { animation-delay:.2s; }
+.ldot:nth-child(3) { animation-delay:.4s; }
+@keyframes lb { 0%,80%,100%{transform:translateY(0);opacity:.4;} 40%{transform:translateY(-5px);opacity:1;} }
+
+.empty-chat {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px; color: var(--sub); padding: 40px; text-align: center;
+}
+.empty-icon { font-size: 2.4rem; opacity: 0.35; }
+.empty-text { font-size: 0.8rem; line-height: 1.7; }
+
+/* ── BOTTOM ZONE ── */
+.bottom-zone { flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border); }
+
+/* Thinking skeleton */
+.thinking-row { display: none; padding: 10px 16px 4px; flex-direction: column; gap: 5px; }
+.thinking-row.on { display: flex; }
+.t-bar {
+  height: 9px; border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border2) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer { from{background-position:200% 0;} to{background-position:-200% 0;} }
+
+/* Suggestions */
+.suggest-strip { display: none; padding: 10px 14px 0; flex-direction: column; gap: 7px; }
+.suggest-strip.on { display: flex; }
+.suggest-label {
+  font-size: 0.59rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent); display: flex; align-items: center; gap: 5px;
+}
+.suggest-label::before { content: '✦'; font-size: 0.5rem; }
+.suggest-list { display: flex; flex-direction: column; gap: 5px; }
+
+.sug-btn {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--r-sm); padding: 10px 13px;
+  color: var(--text); font-family: 'Syne', sans-serif;
+  font-size: 0.82rem; font-weight: 400; text-align: left;
+  cursor: pointer; display: flex; align-items: center; gap: 10px;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s; line-height: 1.4;
+}
+.sug-btn:hover { background: var(--surface3); border-color: var(--you); transform: translateX(3px); }
+.sug-btn:active { transform: translateX(3px) scale(0.98); }
+.sug-arr { color: var(--sub); font-size: 0.7rem; margin-left: auto; flex-shrink: 0; transition: color 0.15s; }
+.sug-btn:hover .sug-arr { color: var(--you); }
+
+/* Input row */
+.input-zone { padding: 10px 14px 18px; display: flex; gap: 9px; align-items: flex-end; }
+.input-wrap {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--r); display: flex; align-items: flex-end;
+  padding: 2px 6px 2px 13px; gap: 5px;
+  transition: border-color 0.2s;
+}
+.input-wrap:focus-within { border-color: var(--you); }
+#msgInput {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: 'Syne', sans-serif;
+  font-size: 0.88rem; font-weight: 400;
+  padding: 10px 0; resize: none; max-height: 100px; line-height: 1.4;
+}
+#msgInput::placeholder { color: var(--sub); }
+
+.send-btn {
+  background: var(--you); border: none; border-radius: 9px;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 0.85rem; margin-bottom: 3px;
+  transition: background 0.2s, transform 0.1s;
+}
+.send-btn:hover { background: #3a7ce8; }
+.send-btn:active { transform: scale(0.92); }
+.send-btn:disabled { background: var(--border2); cursor: not-allowed; transform: none; }
+
+.listen-btn {
+  background: var(--them-dim); border: 1px solid var(--them-border);
+  border-radius: var(--r); width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1.1rem;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s;
+}
+.listen-btn:hover { background: rgba(52,211,153,0.15); border-color: var(--them); }
+.listen-btn.active { background: rgba(52,211,153,0.2); border-color: var(--them); animation: ring 1.2s infinite; }
+.listen-btn:disabled { opacity: 0.3; cursor: not-allowed; animation: none; }
+@keyframes ring { 0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,0.4);} 50%{box-shadow:0 0 0 8px rgba(52,211,153,0);} }
+
+/* ══════════════════════
+   PROFILE SCREEN
+══════════════════════ */
+#profileScreen { background: var(--bg); }
+
+.profile-scroll { flex: 1; overflow-y: auto; padding: 24px 18px 40px; display: flex; flex-direction: column; gap: 24px; }
+.profile-scroll::-webkit-scrollbar { width: 3px; }
+.profile-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.profile-intro {
+  padding: 6px 0 4px;
+}
+.profile-title {
+  font-family: 'Instrument Serif', serif;
+  font-size: 1.7rem; color: var(--text); margin-bottom: 6px;
+}
+.profile-sub { font-size: 0.74rem; color: var(--sub2); line-height: 1.6; font-weight: 400; }
+
+.form-section { display: flex; flex-direction: column; gap: 14px; }
+.section-label {
+  font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 2px;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 0.75rem; color: var(--sub2); font-weight: 600; letter-spacing: 0.04em; }
+
+.field input,
+.field textarea,
+.field select {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: var(--r-sm); padding: 11px 14px;
+  color: var(--text); font-family: 'Syne', sans-serif;
+  font-size: 0.87rem; font-weight: 400; outline: none;
+  transition: border-color 0.2s;
+  -webkit-appearance: none;
+}
+.field input:focus,
+.field textarea:focus,
+.field select:focus { border-color: var(--you); }
+.field input::placeholder,
+.field textarea::placeholder { color: var(--sub); }
+.field textarea { resize: none; min-height: 80px; line-height: 1.5; }
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.save-profile-btn {
+  background: var(--you); border: none; border-radius: var(--r);
+  padding: 14px 24px; color: #fff; font-family: 'Syne', sans-serif;
+  font-size: 0.88rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.save-profile-btn:hover { background: #3a7ce8; }
+.save-profile-btn:active { transform: scale(0.98); }
+
+.save-toast {
+  background: var(--them-dim); border: 1px solid var(--them-border);
+  border-radius: var(--r-sm); padding: 10px 16px;
+  font-size: 0.78rem; color: var(--them);
+  display: none; align-items: center; gap: 8px;
+}
+.save-toast.show { display: flex; }
+
+/* ── PROFILE BADGE on topbar ── */
+.profile-badge {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--you-dim); border: 1px solid var(--you-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 700; color: var(--you);
+  letter-spacing: 0;
+}
+
+/* Responsive */
+@media (min-width: 560px) {
+  #scenarioScreen, #convScreen, #profileScreen {
+    max-width: 520px; margin: 0 auto;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════
+     SCREEN 1: SCENARIOS
+══════════════════════════════ -->
+<div id="scenarioScreen" class="screen active">
+  <div class="topbar">
+    <div class="topbar-brand">VoiceBridge</div>
+    <div class="topbar-spacer"></div>
+    <div class="profile-badge" id="topBadge">?</div>
+    <button class="icon-btn" onclick="showScreen('profileScreen')" title="Profile & Settings">⚙️</button>
+  </div>
+
+  <div class="scenario-hero">
+    <div class="scenario-headline">What's the<br><em>situation?</em></div>
+    <div class="scenario-sub">Choose a scenario. Your words are spoken aloud. Their reply becomes text. AI suggests your next move.</div>
+  </div>
+
+  <div class="scenario-scroll" id="scenarioList"></div>
+</div>
+
+
+<!-- ══════════════════════════════
+     SCREEN 2: CONVERSATION
+══════════════════════════════ -->
+<div id="convScreen" class="screen">
+  <div class="conv-topbar">
+    <button class="icon-btn" onclick="goBack()">←</button>
+    <div class="conv-meta">
+      <div class="conv-title">
+        <span id="convIcon">💬</span>
+        <span id="convTitle">Conversation</span>
+      </div>
+      <div class="conv-status">
+        <div class="pip" id="pip"></div>
+        <span id="pipLabel">ready</span>
+      </div>
+    </div>
+    <button class="icon-btn" onclick="showScreen('profileScreen')" title="Profile">⚙️</button>
+  </div>
+
+  <div class="chat-log" id="chatLog">
+    <div class="empty-chat" id="emptyState">
+      <div class="empty-icon">💬</div>
+      <div class="empty-text">Type or tap a starter phrase below.<br>It will be spoken aloud.</div>
+    </div>
+  </div>
+
+  <div class="bottom-zone">
+    <div class="thinking-row" id="thinkingRow">
+      <div class="t-bar" style="width:72%"></div>
+      <div class="t-bar" style="width:50%"></div>
+    </div>
+    <div class="suggest-strip" id="suggestStrip">
+      <div class="suggest-label">Suggested replies</div>
+      <div class="suggest-list" id="suggestList"></div>
+    </div>
+    <div class="input-zone">
+      <div class="input-wrap">
+        <textarea id="msgInput" placeholder="Type your message…" rows="1"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">▶</button>
+      </div>
+      <button class="listen-btn" id="listenBtn" onclick="toggleListen()" title="Listen for their reply">🎙</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════
+     SCREEN 3: PROFILE
+══════════════════════════════ -->
+<div id="profileScreen" class="screen">
+  <div class="topbar">
+    <button class="icon-btn" onclick="goBackFromProfile()">←</button>
+    <div class="topbar-brand">Profile</div>
+    <div class="topbar-spacer"></div>
+  </div>
+
+  <div class="profile-scroll">
+    <div class="profile-intro">
+      <div class="profile-title">Your<br><em>details</em></div>
+      <div class="profile-sub">This information helps the AI give you smarter, more personalised suggestions during conversations.</div>
+    </div>
+
+    <div class="form-section">
+      <div class="section-label">Personal</div>
+      <div class="field-row">
+        <div class="field">
+          <label>First Name</label>
+          <input type="text" id="pFirstName" placeholder="e.g. Marie"/>
+        </div>
+        <div class="field">
+          <label>Surname</label>
+          <input type="text" id="pSurname" placeholder="e.g. Dubois"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Date of Birth</label>
+        <input type="date" id="pDob"/>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="section-label">Emergency Contact</div>
+      <div class="field">
+        <label>Contact Name</label>
+        <input type="text" id="pEcName" placeholder="e.g. Jean Dubois"/>
+      </div>
+      <div class="field">
+        <label>Contact Phone</label>
+        <input type="tel" id="pEcPhone" placeholder="e.g. +33 6 12 34 56 78"/>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="section-label">Medical Notes</div>
+      <div class="field">
+        <label>Relevant information for others</label>
+        <textarea id="pMedical" placeholder="e.g. Profoundly deaf since birth. No speech. Allergic to penicillin."></textarea>
+      </div>
+    </div>
+
+    <div class="save-toast" id="saveToast">✓ Profile saved</div>
+
+    <button class="save-profile-btn" onclick="saveProfile()">
+      <span>Save Profile</span>
+    </button>
+  </div>
+</div>
+
+
+<script>
+// ══════════════════════════════════════════════
+//  DATA
+// ══════════════════════════════════════════════
+const SCENARIOS = [
+  { id:'shop',      icon:'🛒', name:'At a Shop / Checkout',       desc:'Buying something, prices, availability',           openers:['How much does this cost?','Do you have this in another size?','I would like to buy this please.'] },
+  { id:'doctor',    icon:'🏥', name:'At the Doctor / Pharmacy',   desc:'Appointments, prescriptions, symptoms',            openers:['I have an appointment.','I am here to pick up a prescription.','I have pain here — can you help?'] },
+  { id:'restaurant',icon:'🍽', name:'Restaurant / Café',          desc:'Ordering food, menu questions, allergies',         openers:['Can I see the menu please?','I have a nut allergy.','I would like to order.'] },
+  { id:'transport', icon:'🚌', name:'Transport / Directions',     desc:'Directions, tickets, public transit',              openers:['Where is the nearest bus stop?','One ticket to the centre please.','Which platform for the train?'] },
+  { id:'emergency', icon:'🚨', name:'Emergency / Urgent',         desc:'Quickly communicating urgent needs',               openers:['I need help urgently.','Please call an ambulance.','I am deaf — please read my screen.'] },
+  { id:'social',    icon:'👋', name:'Meeting Someone',            desc:'Introductions, small talk, social situations',     openers:['Hello, I am deaf. I use this app to communicate.','Nice to meet you!','Could you speak clearly into the phone?'] },
+  { id:'work',      icon:'💼', name:'Work / Office',              desc:'Meetings, colleagues, professional settings',      openers:['I have a meeting scheduled here.','Could you speak into my phone please?','I would like to discuss something with you.'] },
+];
+
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let currentScenario = null;
+let conversation    = [];
+let profile         = {};
+let voices          = [];
+let selectedVoice   = null;
+let isListening     = false;
+let recognition     = null;
+let isBusy          = false;
+let lastScreen      = 'scenarioScreen';
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+window.addEventListener('load', () => {
+  loadProfile();
+  buildScenarioList();
+  initVoices();
+  autoResize();
+});
+
+// ══════════════════════════════════════════════
+//  PROFILE
+// ══════════════════════════════════════════════
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem('vb_profile');
+    if (raw) {
+      profile = JSON.parse(raw);
+      populateProfileForm();
+      updateBadge();
+    }
+  } catch(e) {}
+}
+
+function saveProfile() {
+  profile = {
+    firstName: document.getElementById('pFirstName').value.trim(),
+    surname:   document.getElementById('pSurname').value.trim(),
+    dob:       document.getElementById('pDob').value,
+    ecName:    document.getElementById('pEcName').value.trim(),
+    ecPhone:   document.getElementById('pEcPhone').value.trim(),
+    medical:   document.getElementById('pMedical').value.trim(),
+  };
+  localStorage.setItem('vb_profile', JSON.stringify(profile));
+  updateBadge();
+
+  const toast = document.getElementById('saveToast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function populateProfileForm() {
+  document.getElementById('pFirstName').value = profile.firstName || '';
+  document.getElementById('pSurname').value   = profile.surname   || '';
+  document.getElementById('pDob').value        = profile.dob       || '';
+  document.getElementById('pEcName').value     = profile.ecName    || '';
+  document.getElementById('pEcPhone').value    = profile.ecPhone   || '';
+  document.getElementById('pMedical').value    = profile.medical   || '';
+}
+
+function updateBadge() {
+  const badge = document.getElementById('topBadge');
+  if (profile.firstName) {
+    badge.textContent = (profile.firstName[0] + (profile.surname?.[0] || '')).toUpperCase();
+  } else {
+    badge.textContent = '?';
+  }
+}
+
+function profileContext() {
+  if (!profile.firstName) return '';
+  const parts = [];
+  if (profile.firstName) parts.push(`Name: ${profile.firstName} ${profile.surname || ''}`.trim());
+  if (profile.dob) {
+    const age = Math.floor((Date.now() - new Date(profile.dob)) / 31557600000);
+    if (age > 0 && age < 120) parts.push(`Age: ${age}`);
+  }
+  if (profile.medical) parts.push(`Medical notes: ${profile.medical}`);
+  return parts.join('. ');
+}
+
+// ══════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════
+function showScreen(id) {
+  if (id === 'profileScreen') lastScreen = getCurrentScreen();
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function getCurrentScreen() {
+  const active = document.querySelector('.screen.active');
+  return active ? active.id : 'scenarioScreen';
+}
+
+function goBack() {
+  stopListening();
+  showScreen('scenarioScreen');
+}
+
+function goBackFromProfile() {
+  showScreen(lastScreen || 'scenarioScreen');
+}
+
+// ══════════════════════════════════════════════
+//  SCENARIO LIST
+// ══════════════════════════════════════════════
+function buildScenarioList() {
+  const list = document.getElementById('scenarioList');
+  list.innerHTML = '';
+  SCENARIOS.forEach(sc => {
+    const card = document.createElement('div');
+    card.className = 'scenario-card';
+    card.innerHTML = `
+      <div class="sc-icon">${sc.icon}</div>
+      <div class="sc-info">
+        <div class="sc-name">${sc.name}</div>
+        <div class="sc-desc">${sc.desc}</div>
+      </div>
+      <div class="sc-arrow">›</div>`;
+    card.addEventListener('click', () => startScenario(sc));
+    list.appendChild(card);
+  });
+
+  const div = document.createElement('div');
+  div.className = 'divider-or'; div.textContent = 'or';
+  list.appendChild(div);
+
+  const fb = document.createElement('button');
+  fb.className = 'free-btn';
+  fb.innerHTML = `<span style="font-size:1.2rem">✏️</span> Start a free conversation`;
+  fb.addEventListener('click', () => startScenario({ id:'free', icon:'💬', name:'Free Conversation', openers:[] }));
+  list.appendChild(fb);
+}
+
+// ══════════════════════════════════════════════
+//  START SCENARIO
+// ══════════════════════════════════════════════
+function startScenario(sc) {
+  currentScenario = sc;
+  conversation = [];
+  isBusy = false;
+
+  document.getElementById('convIcon').textContent  = sc.icon;
+  document.getElementById('convTitle').textContent = sc.name;
+  const log = document.getElementById('chatLog');
+  log.innerHTML = `
+    <div class="empty-chat" id="emptyState">
+      <div class="empty-icon">${sc.icon}</div>
+      <div class="empty-text">Type or tap a starter phrase.<br>It will be spoken aloud.</div>
+    </div>`;
+  hideSuggestions();
+  setStatus('ready');
+
+  if (sc.openers?.length) {
+    addSystemMsg(`Scenario: ${sc.name}`);
+    renderOpeners(sc.openers);
+  }
+  showScreen('convScreen');
+}
+
+// ══════════════════════════════════════════════
+//  RENDER HELPERS
+// ══════════════════════════════════════════════
+function addMsg(role, text) {
+  document.getElementById('emptyState')?.remove();
+  conversation.push({ role, text });
+
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  const labels = { you:'🔊 You (spoken aloud)', them:'👤 Them (heard)' };
+  el.innerHTML = role !== 'system'
+    ? `<div class="msg-label">${labels[role]}</div><div class="bubble">${esc(text)}</div>`
+    : `<div class="bubble">${esc(text)}</div>`;
+  log.appendChild(el);
+  scrollLog();
+}
+
+function addSystemMsg(t) {
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div');
+  el.className = 'msg system';
+  el.innerHTML = `<div class="bubble">${esc(t)}</div>`;
+  log.appendChild(el);
+  scrollLog();
+}
+
+function renderOpeners(openers) {
+  const log = document.getElementById('chatLog');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:2px;';
+  openers.forEach(o => {
+    const btn = document.createElement('button');
+    btn.className = 'sug-btn';
+    btn.innerHTML = `${esc(o)}<span class="sug-arr">›</span>`;
+    btn.addEventListener('click', () => { wrap.remove(); speakAndLog(o); });
+    wrap.appendChild(btn);
+  });
+  log.appendChild(wrap);
+  scrollLog();
+}
+
+function renderSuggestions(list) {
+  const strip = document.getElementById('suggestStrip');
+  const ul = document.getElementById('suggestList');
+  ul.innerHTML = '';
+  list.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'sug-btn';
+    btn.innerHTML = `${esc(s)}<span class="sug-arr">›</span>`;
+    btn.addEventListener('click', () => { hideSuggestions(); speakAndLog(s); });
+    ul.appendChild(btn);
+  });
+  strip.classList.add('on');
+  scrollLog();
+}
+
+function hideSuggestions() {
+  document.getElementById('suggestStrip').classList.remove('on');
+  document.getElementById('suggestList').innerHTML = '';
+}
+
+function showListeningBubble() {
+  document.getElementById('emptyState')?.remove();
+  const log = document.getElementById('chatLog');
+  const el = document.createElement('div');
+  el.className = 'msg them'; el.id = 'listenInd';
+  el.innerHTML = `<div class="msg-label">👤 Them</div><div class="listen-bubble"><div class="ldot"></div><div class="ldot"></div><div class="ldot"></div></div>`;
+  log.appendChild(el);
+  scrollLog();
+}
+
+function removeListeningBubble() {
+  document.getElementById('listenInd')?.remove();
+}
+
+function showThinking() { document.getElementById('thinkingRow').classList.add('on'); }
+function hideThinking()  { document.getElementById('thinkingRow').classList.remove('on'); }
+
+function scrollLog() {
+  const log = document.getElementById('chatLog');
+  setTimeout(() => log.scrollTo({ top: log.scrollHeight, behavior:'smooth' }), 50);
+}
+
+// ══════════════════════════════════════════════
+//  SEND + SPEAK
+// ══════════════════════════════════════════════
+async function sendMessage() {
+  const inp = document.getElementById('msgInput');
+  const text = inp.value.trim();
+  if (!text || isBusy) return;
+  inp.value = ''; inp.style.height = 'auto';
+  hideSuggestions();
+  await speakAndLog(text);
+}
+
+async function speakAndLog(text) {
+  if (isBusy) return;
+  isBusy = true;
+  hideSuggestions();
+  addMsg('you', text);
+  setStatus('speaking', '🔊 Speaking aloud…');
+  await speakTTS(text);
+  setStatus('listening', '🎙 Listening for reply…');
+  startListeningAuto();
+}
+
+// ══════════════════════════════════════════════
+//  TTS — French male voice
+// ══════════════════════════════════════════════
+function initVoices() {
+  const set = () => {
+    voices = window.speechSynthesis.getVoices();
+    selectedVoice = pickFrenchMaleVoice(voices);
+  };
+  set();
+  window.speechSynthesis.onvoiceschanged = set;
+}
+
+function pickFrenchMaleVoice(all) {
+  // Priority 1: French locale, male-sounding name
+  const malishNames = ['thomas','nicolas','pierre','jean','henri','paul','felix','laurent','guy'];
+  const frVoices = all.filter(v => v.lang.startsWith('fr'));
+  for (const n of malishNames) {
+    const match = frVoices.find(v => v.name.toLowerCase().includes(n));
+    if (match) return match;
+  }
+  // Priority 2: Any French voice
+  if (frVoices.length) return frVoices[0];
+  // Priority 3: English deep male fallback
+  const deepMale = ['daniel','james','arthur','oliver','gordon','alex','bruce','fred'];
+  for (const n of deepMale) {
+    const match = all.find(v => v.name.toLowerCase().includes(n));
+    if (match) return match;
+  }
+  // Fallback: first available
+  return all[0] || null;
+}
+
+function speakTTS(text) {
+  return new Promise(resolve => {
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    // Try to pick best voice at speak time (voices sometimes load late)
+    const best = pickFrenchMaleVoice(window.speechSynthesis.getVoices());
+    if (best) utt.voice = best;
+    utt.rate = 0.92; utt.pitch = 0.88; utt.volume = 1;
+    utt.onend = resolve; utt.onerror = resolve;
+    window.speechSynthesis.speak(utt);
+  });
+}
+
+// ══════════════════════════════════════════════
+//  SPEECH RECOGNITION
+// ══════════════════════════════════════════════
+function toggleListen() {
+  if (isListening) { stopListening(); return; }
+  hideSuggestions();
+  startListeningAuto();
+}
+
+function startListeningAuto() {
+  if (!checkSR()) { isBusy = false; setStatus('ready'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('listenBtn').classList.add('active');
+    setStatus('listening', '🎙 Listening…');
+    showListeningBubble();
+  };
+
+  recognition.onresult = async (e) => {
+    const transcript = e.results[0][0].transcript.trim();
+    stopListening();
+    removeListeningBubble();
+    addMsg('them', transcript);
+    await getAISuggestions(transcript);
+  };
+
+  recognition.onerror = (e) => {
+    stopListening(); removeListeningBubble();
+    if (e.error !== 'no-speech' && e.error !== 'aborted')
+      addSystemMsg('Could not hear clearly. Tap 🎙 to try again.');
+    isBusy = false; setStatus('ready');
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    document.getElementById('listenBtn').classList.remove('active');
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  try { recognition?.stop(); } catch(e) {}
+  recognition = null; isListening = false;
+  document.getElementById('listenBtn').classList.remove('active');
+  removeListeningBubble();
+}
+
+function checkSR() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    addSystemMsg('Speech recognition not supported. Please use Chrome or Edge.');
+    return false;
+  }
+  return true;
+}
+
+// ══════════════════════════════════════════════
+//  AI SUGGESTIONS — context-aware
+// ══════════════════════════════════════════════
+async function getAISuggestions(theirLastMessage) {
+  setStatus('thinking', '✦ Thinking…');
+  showThinking();
+
+  // Build a rich history string (last 6 turns)
+  const history = conversation.slice(-6)
+    .map(m => `${m.role === 'you' ? 'Me' : 'Them'}: ${m.text}`)
+    .join('\n');
+
+  const userCtx = profileContext();
+  const scenarioCtx = currentScenario?.name || 'General conversation';
+
+  const prompt = `You are a real-time communication assistant for a deaf/non-speaking person.
+
+${userCtx ? `About the user: ${userCtx}\n` : ''}Scenario: ${scenarioCtx}
+
+Conversation so far:
+${history}
+
+The other person just said: "${theirLastMessage}"
+
+Your task: Generate exactly 3 short, practical reply suggestions for the deaf person to respond with RIGHT NOW — directly addressing what the other person just said.
+
+Rules:
+- Each reply must directly respond to "${theirLastMessage}"
+- Keep each reply under 18 words
+- Make them natural, varied in approach (e.g. one agreeing, one asking for clarification, one redirecting)
+- Fit the scenario context
+- Use first person ("I", "Can you", "Please")
+- Return ONLY a raw JSON array of 3 strings. No markdown, no explanation.
+
+Example format: ["Yes, that works for me.", "Could you explain that again please?", "I need a moment to think."]`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await res.json();
+    const raw = data.content?.[0]?.text || '[]';
+    let suggestions;
+    try {
+      suggestions = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    } catch {
+      suggestions = fallbackSuggestions(theirLastMessage);
+    }
+
+    hideThinking();
+    renderSuggestions(suggestions.slice(0, 3));
+    setStatus('ready');
+    isBusy = false;
+
+  } catch(err) {
+    hideThinking();
+    renderSuggestions(fallbackSuggestions(theirLastMessage));
+    setStatus('ready');
+    isBusy = false;
+  }
+}
+
+function fallbackSuggestions(lastMsg) {
+  // Generic but slightly reactive fallbacks
+  const lower = lastMsg.toLowerCase();
+  if (lower.includes('?'))
+    return ['Yes, that is correct.', 'No, not exactly — let me explain.', 'Could you repeat that please?'];
+  if (lower.includes('sorry') || lower.includes('apologise'))
+    return ['No worries, thank you.', 'That is okay, I understand.', 'Please, do not worry about it.'];
+  return ['I understand, thank you.', 'Could you clarify that please?', 'One moment please.'];
+}
+
+// ══════════════════════════════════════════════
+//  STATUS BAR
+// ══════════════════════════════════════════════
+function setStatus(type, label) {
+  const pip = document.getElementById('pip');
+  const lbl = document.getElementById('pipLabel');
+  pip.className = 'pip' + (type && type !== 'ready' ? ` ${type}` : '');
+  lbl.textContent = label || type;
+
+  const listenBtn = document.getElementById('listenBtn');
+  const sendBtn   = document.getElementById('sendBtn');
+  listenBtn.disabled = (type === 'speaking' || type === 'thinking');
+  sendBtn.disabled   = (type === 'speaking' || type === 'listening' || type === 'thinking');
+}
+
+// ══════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════
+function autoResize() {
+  const ta = document.getElementById('msgInput');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+}
+
+function esc(t) {
+  return String(t)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
