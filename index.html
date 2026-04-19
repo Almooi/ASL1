@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VoiceBridge</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#090b10;--s1:#0f1118;--s2:#151820;--s3:#1b1f2c;
+  --b1:#1e2235;--b2:#272d42;--b3:#303753;
+  --text:#e8ecf8;--sub:#4a5270;--sub2:#7d879e;
+  --you:#4f8ef7;--you-d:#0a1830;--you-b:rgba(79,142,247,0.2);
+  --them:#2dd4a0;--them-d:#061510;--them-b:rgba(45,212,160,0.2);
+  --gold:#f5a623;--gold-d:#1a1000;--gold-b:rgba(245,166,35,0.2);
+  --red:#f26b6b;--red-d:#180808;--red-b:rgba(242,107,107,0.2);
+  --r:14px;--rsm:9px;--rxs:5px;
+  --fs:1rem;--fs-sm:0.82rem;--fs-xs:0.68rem;--fs-lg:1.1rem;
+}
+body.large{--fs:1.18rem;--fs-sm:0.96rem;--fs-xs:0.8rem;--fs-lg:1.3rem;}
+html,body{height:100%;font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;}
+#root{height:100%;display:flex;justify-content:center;}
+button{font-family:'Syne',sans-serif;cursor:pointer;}
+input,textarea{font-family:'Syne',sans-serif;}
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+::-webkit-scrollbar-track{background:transparent;}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+@keyframes blink{from{opacity:1;}to{opacity:.2;}}
+@keyframes pulse{from{opacity:1;}to{opacity:.3;}}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(45,212,160,.35);}50%{box-shadow:0 0 0 8px rgba(45,212,160,0);}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes shim{from{background-position:200% 0;}to{background-position:-200% 0;}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo,useReducer}=React;
+
+/* ═══════════════════════════════════════════
+   INDEXED DB
+═══════════════════════════════════════════ */
+let _db=null;
+async function getDB(){
+  if(_db)return _db;
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('vb2',1);
+    r.onupgradeneeded=e=>{
+      const d=e.target.result;
+      ['people','places','sessions','quality','settings'].forEach(s=>{
+        if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:'id'});
+      });
+    };
+    r.onsuccess=e=>{_db=e.target.result;res(_db);};
+    r.onerror=rej;
+  });
+}
+async function dbGet(store,id){const d=await getDB();return new Promise((r,j)=>{const q=d.transaction(store,'readonly').objectStore(store).get(id);q.onsuccess=()=>r(q.result);q.onerror=j;});}
+async function dbPut(store,obj){const d=await getDB();return new Promise((r,j)=>{const q=d.transaction(store,'readwrite').objectStore(store).put(obj);q.onsuccess=()=>r(q.result);q.onerror=j;});}
+async function dbAll(store){const d=await getDB();return new Promise((r,j)=>{const q=d.transaction(store,'readonly').objectStore(store).getAll();q.onsuccess=()=>r(q.result||[]);q.onerror=j;});}
+async function dbDel(store,id){const d=await getDB();return new Promise((r,j)=>{const q=d.transaction(store,'readwrite').objectStore(store).delete(id);q.onsuccess=r;q.onerror=j;});}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+
+/* ═══════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════ */
+const DEFAULT_PHRASES=['Could you repeat that please?','Please speak more slowly.','I understand, thank you.','One moment please.','I am deaf — please read my screen.','Please write it down.','Yes, that is correct.','No, let me clarify.'];
+const ILLUSTRABLE_POS=['NN','NNS','NNP','NNPS','VB','VBD','VBG','VBN','VBP','VBZ','JJ'];
+const STOP_WORDS=new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','shall','should','may','might','can','could','i','you','he','she','it','we','they','me','him','her','us','them','my','your','his','its','our','their','this','that','these','those','and','but','or','nor','for','yet','so','in','on','at','to','of','up','by','as','if','then','than','not','no','so','just','also','very','too','more','most','from','with','about']);
+const ILLUSTRABLE_WORDS=['prescription','medicine','pharmacy','doctor','hospital','food','water','money','price','shop','order','help','pain','stop','toilet','emergency','ambulance','police','fire','car','bus','train','ticket','passport','receipt','menu','allergy','tablet','injection','blood','heart','head','arm','leg','back','stomach','door','window','phone','bag','card','keys','coffee','tea','bread','milk','cheese','meat','fish','fruit','apple','banana','chair','table','bed','bathroom','kitchen','office','school','bank','hotel','restaurant','pharmacy','market','street','road','building','park','station','airport'];
+
+/* ═══════════════════════════════════════════
+   VOICE
+═══════════════════════════════════════════ */
+function pickVoice(){
+  const all=window.speechSynthesis?.getVoices()||[];
+  for(const n of['thomas','nicolas','pierre','jean','henri']){const m=all.find(v=>v.lang.startsWith('fr')&&v.name.toLowerCase().includes(n));if(m)return m;}
+  const fr=all.find(v=>v.lang.startsWith('fr'));if(fr)return fr;
+  for(const n of['daniel','james','arthur','oliver']){const m=all.find(v=>v.name.toLowerCase().includes(n));if(m)return m;}
+  return all[0]||null;
+}
+function tts(text){
+  return new Promise(res=>{
+    if(!window.speechSynthesis){res();return;}
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    const v=pickVoice();if(v)u.voice=v;
+    u.rate=0.91;u.pitch=0.86;u.volume=1;
+    u.onend=res;u.onerror=res;
+    window.speechSynthesis.speak(u);
+  });
+}
+
+/* ═══════════════════════════════════════════
+   WORD ILLUSTRATION
+═══════════════════════════════════════════ */
+const imgCache={};
+async function fetchImages(word,sentence,context){
+  const key=word.toLowerCase()+'|'+context;
+  if(imgCache[key])return imgCache[key];
+  const ctx=sentence.toLowerCase().split(/\s+/).filter(w=>!STOP_WORDS.has(w)&&w.length>3).slice(0,3);
+  if(context)ctx.push(context.toLowerCase().split(/\s+/)[0]);
+  const query=[...new Set([word,...ctx])].slice(0,4).join(' ');
+  const results=[];
+  try{
+    const r=await fetch(`https://api.arasaac.org/v1/pictograms/en/search/${encodeURIComponent(query)}`);
+    if(r.ok){const d=await r.json();d.slice(0,5).forEach(p=>results.push({type:'arasaac',url:`https://static.arasaac.org/pictograms/${p._id}/${p._id}_500.png`,label:p.keywords?.[0]?.keyword||word}));}
+  }catch{}
+  try{
+    const r2=await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+    if(r2.ok){const d2=await r2.json();if(d2.thumbnail?.source)results.push({type:'wiki',url:d2.thumbnail.source,label:d2.title||word});}
+  }catch{}
+  imgCache[key]=results;
+  return results;
+}
+
+function isIllustratable(word){
+  const w=word.toLowerCase().replace(/[^a-z]/g,'');
+  if(w.length<3||STOP_WORDS.has(w))return false;
+  return ILLUSTRABLE_WORDS.includes(w)||/^[A-Z]/.test(word[0]);
+}
+
+/* ═══════════════════════════════════════════
+   SMALL COMPONENTS
+═══════════════════════════════════════════ */
+function ScoreBadge({score}){
+  const col=score>=80?'#4caf50':score>=50?'#f5a623':'#f26b6b';
+  const bg=score>=80?'rgba(76,175,80,0.12)':score>=50?'rgba(245,166,35,0.12)':'rgba(242,107,107,0.12)';
+  return <sup style={{background:bg,color:col,padding:'1px 5px',borderRadius:4,fontSize:'0.56rem',fontWeight:700,marginLeft:4,verticalAlign:'super',lineHeight:1,display:'inline-block'}}>{score}</sup>;
+}
+
+function AmbientDot({level,onClick}){
+  const cols=['#2a2d3a','#c9a800','#f5a623','var(--you)','var(--them)','var(--red)'];
+  const col=cols[Math.min(level,5)];
+  return <div onClick={onClick} style={{width:9,height:9,borderRadius:'50%',background:col,cursor:'pointer',flexShrink:0,boxShadow:level>=3?`0 0 8px ${col}`:'none',animation:level>=3?'pulse 1.2s infinite alternate':'none',transition:'background .3s'}} title="Environment monitor"/>;
+}
+
+function Spinner(){return <div style={{width:16,height:16,border:'2px solid var(--b2)',borderTopColor:'var(--you)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>;}
+
+function IBtm({children,onClick,style={},title='',disabled=false}){
+  return <button disabled={disabled} onClick={onClick} title={title} style={{background:'none',border:'1px solid var(--b1)',borderRadius:8,color:'var(--sub2)',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.9rem',flexShrink:0,transition:'all .2s',...style}}>{children}</button>;
+}
+
+function Pill({children,onClick,active,style={}}){
+  return <button onClick={onClick} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 11px',borderRadius:20,border:`1px solid ${active?'var(--you-b)':'var(--b1)'}`,background:active?'var(--you-d)':'var(--s2)',color:active?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s',...style}}>{children}</button>;
+}
+
+function Field({label,id,value,onChange,type='text',placeholder='',multi=false}){
+  const s={width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',fontFamily:"'Syne',sans-serif"};
+  return <div style={{marginBottom:12}}>
+    <label style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',display:'block',marginBottom:5}}>{label}</label>
+    {multi?<textarea id={id} value={value} onChange={onChange} placeholder={placeholder} rows={3} style={{...s,resize:'none',lineHeight:1.5}}/>:<input id={id} type={type} value={value} onChange={onChange} placeholder={placeholder} style={s}/>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   IMAGE CARD
+═══════════════════════════════════════════ */
+function ImageCard({word,sentence,context,onClose}){
+  const [imgs,setImgs]=useState([]);
+  const [idx,setIdx]=useState(0);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    setLoading(true);
+    fetchImages(word,sentence,context).then(r=>{setImgs(r);setLoading(false);}).catch(()=>setLoading(false));
+  },[word]);
+  const cur=imgs[idx];
+  return <div style={{background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--r)',padding:12,marginTop:6,display:'flex',flexDirection:'column',alignItems:'center',gap:8,animation:'slideUp .2s ease',maxWidth:220}}>
+    <div style={{display:'flex',justifyContent:'space-between',width:'100%',alignItems:'center'}}>
+      <span style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',fontWeight:700}}>{word}</span>
+      <button onClick={onClose} style={{background:'none',border:'none',color:'var(--sub)',fontSize:'0.8rem',cursor:'pointer'}}>✕</button>
+    </div>
+    {loading?<Spinner/>:cur?<>
+      <img src={cur.url} alt={cur.label} style={{width:120,height:120,objectFit:'contain',borderRadius:8,background:'rgba(255,255,255,.05)'}} onError={e=>{e.target.style.display='none';}}/>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <span style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{cur.type==='arasaac'?'📖 ARASAAC':cur.type==='wiki'?'📚 Wikipedia':'🖼 Image'}</span>
+        {imgs.length>1&&<button onClick={()=>setIdx((idx+1)%imgs.length)} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:6,padding:'3px 8px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>↺</button>}
+      </div>
+    </>:<span style={{fontSize:'var(--fs-xs)',color:'var(--sub)'}}>No image found</span>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   MESSAGE BUBBLE
+═══════════════════════════════════════════ */
+function MessageBubble({msg,isLatest,onSayAgain,onReplay,onDelete,onFlag,onEdit,placeName}){
+  const [longPress,setLongPress]=useState(false);
+  const [imgWord,setImgWord]=useState(null);
+  const [editing,setEditing]=useState(false);
+  const [editVal,setEditVal]=useState(msg.text);
+  const lpTimer=useRef(null);
+
+  function startLP(){lpTimer.current=setTimeout(()=>setLongPress(true),500);}
+  function endLP(){clearTimeout(lpTimer.current);}
+
+  function renderText(text){
+    if(msg.role!=='them'||msg.interim)return text;
+    return text.split(' ').map((w,i)=>{
+      const clean=w.replace(/[^a-zA-Z]/g,'');
+      if(isIllustratable(clean)){
+        return <span key={i}>{' '}<span onClick={()=>setImgWord(imgWord===clean?null:clean)} style={{textDecoration:'underline dotted var(--them)',textDecorationThickness:1,cursor:'pointer',textUnderlineOffset:3}}>{w}</span></span>;
+      }
+      return <span key={i}>{' '}{w}</span>;
+    });
+  }
+
+  const isYou=msg.role==='you';
+  if(msg.role==='system') return <div style={{alignSelf:'center',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:20,padding:'5px 14px',fontSize:'var(--fs-xs)',color:'var(--sub2)',fontFamily:"'JetBrains Mono',monospace",textAlign:'center',maxWidth:'90%',animation:'msgIn .2s ease'}}>{msg.text}</div>;
+
+  return <div style={{display:'flex',flexDirection:'column',maxWidth:'88%',alignSelf:isYou?'flex-end':'flex-start',alignItems:isYou?'flex-end':'flex-start',animation:'msgIn .2s ease',gap:4}}>
+    <div style={{fontSize:'var(--fs-xs)',letterSpacing:'0.08em',textTransform:'uppercase',color:isYou?'var(--you)':'var(--them)',padding:'0 3px',display:'flex',alignItems:'center',gap:5}}>
+      {isYou?'🔊 You':'👤 Them'}
+      {msg.flagged&&<span style={{color:'var(--gold)'}}>⚑</span>}
+    </div>
+
+    {msg.hasStruck&&<div style={{padding:'9px 13px',borderRadius:'var(--r)',fontSize:'var(--fs)',lineHeight:1.5,opacity:.35,textDecoration:'line-through',background:'var(--them-d)',border:'1px solid var(--them-b)',color:'#9ff0d4',borderBottomLeftRadius:4}}>
+      {msg.struckText}<ScoreBadge score={msg.struckConf||0}/>
+    </div>}
+
+    {editing?<div style={{width:'100%'}}>
+      <textarea value={editVal} onChange={e=>setEditVal(e.target.value)} style={{width:'100%',background:'var(--s2)',border:'1px solid var(--you-b)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs)',resize:'none',outline:'none',fontFamily:"'Syne',sans-serif",lineHeight:1.4}}/>
+      <div style={{display:'flex',gap:6,marginTop:4}}>
+        <button onClick={()=>{onEdit(msg.id,editVal);setEditing(false);}} style={{background:'var(--you)',border:'none',borderRadius:'var(--rxs)',padding:'6px 14px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Save</button>
+        <button onClick={()=>setEditing(false)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:'var(--rxs)',padding:'6px 12px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Cancel</button>
+      </div>
+    </div>:<div onTouchStart={startLP} onTouchEnd={endLP} onMouseDown={startLP} onMouseUp={endLP} onMouseLeave={endLP}
+      style={{padding:'11px 14px',borderRadius:'var(--r)',fontSize:'var(--fs)',lineHeight:1.55,wordBreak:'break-word',cursor:'pointer',
+        ...(isYou?{background:'var(--you-d)',border:'1px solid var(--you-b)',borderBottomRightRadius:4,color:'#c0d8ff'}:{background:'var(--them-d)',border:'1px solid var(--them-b)',borderBottomLeftRadius:4,color:'#9ff0d4'}),
+        ...(msg.interim?{opacity:.6}:{})}}>
+      {renderText(msg.text)}
+      {!isYou&&!msg.interim&&msg.conf>0&&<ScoreBadge score={msg.conf}/>}
+    </div>}
+
+    {imgWord&&<ImageCard word={imgWord} sentence={msg.text} context={placeName||''} onClose={()=>setImgWord(null)}/>}
+
+    {!isYou&&isLatest&&!msg.interim&&<button onClick={onSayAgain} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'4px 10px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',display:'flex',alignItems:'center',gap:5,marginTop:2}}>↺ Say again</button>}
+
+    {longPress&&<div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:2}}>
+      {[['🔊','Replay',()=>{onReplay(msg.text);setLongPress(false);}],['✏️','Edit',()=>{setEditing(true);setLongPress(false);}],['🗑','Delete',()=>{onDelete(msg.id);setLongPress(false);}],[msg.flagged?'⚑':'⚐','Flag',()=>{onFlag(msg.id);setLongPress(false);}]].map(([ico,lbl,fn])=>(
+        <button key={lbl} onClick={fn} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 10px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>{ico}</button>
+      ))}
+      <button onClick={()=>setLongPress(false)} style={{background:'none',border:'none',color:'var(--sub)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>✕</button>
+    </div>}
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   OVERLAYS
+═══════════════════════════════════════════ */
+function SOSOverlay({profile,onClose}){
+  const rows=[profile.firstName&&{k:'Name',v:`${profile.firstName} ${profile.surname||''}`.trim()},profile.dob&&{k:'Date of Birth',v:profile.dob},profile.ecName&&{k:'Emergency Contact',v:profile.ecName},profile.ecPhone&&{k:'Phone',v:profile.ecPhone},profile.medical&&{k:'Medical Notes',v:profile.medical}].filter(Boolean);
+  if(!rows.length)rows.push({k:'Note',v:'No profile saved. Go to ⚙️ Settings.'});
+  return <div style={{position:'fixed',inset:0,background:'#0f0000',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,gap:18,textAlign:'center'}}>
+    <div style={{fontSize:'clamp(3rem,12vw,5rem)',fontWeight:800,color:'var(--red)',animation:'pulse 1.2s infinite alternate',lineHeight:1}}>⚠ SOS</div>
+    <div style={{background:'#1a0000',border:'2px solid rgba(242,107,107,.3)',borderRadius:'var(--r)',padding:'18px 22px',width:'100%',maxWidth:400,textAlign:'left'}}>
+      {rows.map((r,i)=><div key={i} style={{display:'flex',gap:12,padding:'7px 0',borderBottom:i<rows.length-1?'1px solid rgba(242,107,107,.1)':'none',fontSize:'clamp(0.85rem,4vw,1rem)'}}>
+        <div style={{color:'var(--sub2)',minWidth:110,fontSize:'0.75rem',textTransform:'uppercase',letterSpacing:'0.05em',marginTop:2}}>{r.k}</div>
+        <div style={{color:'var(--text)',fontWeight:600,flex:1}}>{r.v}</div>
+      </div>)}
+    </div>
+    <div style={{fontSize:'0.85rem',color:'var(--sub2)',maxWidth:360,lineHeight:1.6}}>Show this screen to emergency services or a bystander.</div>
+    <button onClick={onClose} style={{background:'var(--red-d)',border:'1px solid rgba(242,107,107,.3)',borderRadius:'var(--r)',padding:'13px 28px',color:'var(--red)',fontSize:'var(--fs-sm)',fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase'}}>← Close SOS</button>
+  </div>;
+}
+
+function ShowScreenOverlay({profile,onClose}){
+  return <div style={{position:'fixed',inset:0,background:'#fff',zIndex:250,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:28,gap:18,textAlign:'center'}}>
+    <div style={{fontFamily:"'Instrument Serif',serif",fontSize:'clamp(2rem,8vw,3.2rem)',color:'#111',lineHeight:1.3}}>Please read<br/>my screen.</div>
+    <div style={{fontSize:'clamp(0.95rem,4vw,1.15rem)',color:'#444',maxWidth:360,lineHeight:1.7}}>I am deaf or non-speaking. I communicate using this app. Please speak clearly — I will show you my reply.</div>
+    {profile.firstName&&<div style={{background:'#f5f5f5',border:'1px solid #ddd',borderRadius:12,padding:'14px 20px',textAlign:'left',width:'100%',maxWidth:380,lineHeight:2,fontSize:'1rem',color:'#333'}}>
+      <strong>Name:</strong> {profile.firstName} {profile.surname||''}<br/>
+      {profile.dob&&<><strong>DOB:</strong> {profile.dob}<br/></>}
+      {profile.medical&&<><strong>Notes:</strong> {profile.medical}</>}
+    </div>}
+    <button onClick={onClose} style={{background:'#111',border:'none',borderRadius:12,padding:'13px 28px',color:'#fff',fontSize:'var(--fs-sm)',fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>← Back</button>
+  </div>;
+}
+
+function ConfirmDialog({msg,confirmText,danger,onConfirm,onCancel}){
+  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div style={{background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--r)',padding:'22px 20px',maxWidth:320,width:'100%'}}>
+      <div style={{fontSize:'var(--fs-sm)',lineHeight:1.6,color:'var(--text)',marginBottom:18}}>{msg}</div>
+      <div style={{display:'flex',gap:8}}>
+        <button onClick={onCancel} style={{flex:1,background:'none',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:10,color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Cancel</button>
+        <button onClick={onConfirm} style={{flex:1,background:danger?'var(--red-d)':'var(--you-d)',border:`1px solid ${danger?'var(--red-b)':'var(--you-b)'}`,borderRadius:'var(--rsm)',padding:10,color:danger?'var(--red)':'var(--you)',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer'}}>{confirmText}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   ENVIRONMENT SCREEN
+═══════════════════════════════════════════ */
+function EnvScreen({level,volume,transcript,alerts,soundLevels,onClose,onStartConv}){
+  const lbls=['Silent','Sound detected','Noise present','Voice detected','Directed at you','⚠ Name detected'];
+  const cols=['var(--sub)','#c9a800','var(--gold)','var(--you)','var(--them)','var(--red)'];
+  const icons=['🔇','👂','🔉','🗣','📢','🔴'];
+  const SOUNDS=[{id:'voice',label:'Human voice',icon:'🗣'},{id:'music',label:'Music / TV',icon:'🎵'},{id:'traffic',label:'Traffic',icon:'🚗'},{id:'alarm',label:'Alarm',icon:'🚨'},{id:'child',label:'Child / Baby',icon:'👶'},{id:'doorbell',label:'Doorbell',icon:'🔔'}];
+  const col=cols[Math.min(level,5)];
+
+  return <div style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:100,display:'flex',flexDirection:'column',maxWidth:520,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+      <IBtm onClick={onClose}>←</IBtm>
+      <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>🌐 Environment Monitor</span>
+      <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'var(--fs-xs)',color:col}}>
+        <div style={{width:7,height:7,borderRadius:'50%',background:col,boxShadow:`0 0 8px ${col}`,animation:level>=3?'pulse 1.2s infinite alternate':'none'}}/>Live
+      </div>
+    </div>
+
+    <div style={{flex:1,overflowY:'auto',padding:'14px 15px',display:'flex',flexDirection:'column',gap:12}}>
+      {/* Status */}
+      <div style={{background:'var(--s1)',border:`1px solid ${col}44`,borderRadius:'var(--r)',padding:'16px',textAlign:'center'}}>
+        <div style={{fontSize:'2rem',marginBottom:6}}>{icons[Math.min(level,5)]}</div>
+        <div style={{fontSize:'var(--fs-lg)',fontWeight:700,color:col}}>{lbls[Math.min(level,5)]}</div>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginTop:3}}>Volume: {volume}/100</div>
+      </div>
+
+      {/* Radar */}
+      <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:14}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Direction Radar</div>
+        <div style={{display:'flex',justifyContent:'center'}}>
+          <svg width={160} height={160}>
+            {[70,45,20].map(r=><circle key={r} cx={80} cy={80} r={r} fill="none" stroke="var(--b1)" strokeWidth={1} strokeDasharray={r<70?'none':'4,4'}/>)}
+            <circle cx={80} cy={80} r={8} fill="var(--you)" opacity={.8}/>
+            {level>=2&&[...Array(Math.min(level+1,5))].map((_,i)=>{const a=(i/5)*Math.PI*2,d=25+i*10;return<circle key={i} cx={80+Math.cos(a)*d} cy={80+Math.sin(a)*d} r={4+level} fill={col} opacity={.7}/>;})}
+          </svg>
+        </div>
+        <div style={{textAlign:'center',fontSize:'var(--fs-xs)',color:'var(--sub2)',marginTop:4}}>● You · Other dots = sound sources</div>
+      </div>
+
+      {/* Volume bar */}
+      <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',marginBottom:7}}>
+          <span style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase'}}>Ambient Volume</span>
+          <span style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{volume}/100</span>
+        </div>
+        <div style={{height:8,background:'var(--b1)',borderRadius:4,overflow:'hidden'}}>
+          <div style={{width:`${volume}%`,height:'100%',background:`linear-gradient(90deg,var(--them),var(--gold),var(--red))`,borderRadius:4,transition:'width .1s'}}/>
+        </div>
+      </div>
+
+      {/* Sound classification */}
+      <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px'}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Sound Classification</div>
+        {SOUNDS.map(s=>{
+          const val=parseInt(soundLevels[s.id])||0;
+          const lbl=val>60?'HIGH':val>20?'MED':val>0?'LOW':'NONE';
+          const dc=val>60?'var(--red)':val>20?'var(--gold)':val>0?'var(--them)':'var(--b2)';
+          return <div key={s.id} style={{display:'flex',alignItems:'center',gap:10,padding:'5px 0',borderBottom:'1px solid var(--b1)'}}>
+            <span style={{fontSize:'1rem',width:20}}>{s.icon}</span>
+            <span style={{flex:1,fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{s.label}</span>
+            <div style={{width:60,height:4,background:'var(--b1)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${val}%`,height:'100%',background:dc,transition:'width .3s'}}/></div>
+            <span style={{fontSize:'var(--fs-xs)',color:dc,width:28,textAlign:'right'}}>{lbl}</span>
+          </div>;
+        })}
+      </div>
+
+      {/* Live transcript */}
+      <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px'}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Live Transcript</div>
+        <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:160,overflowY:'auto'}}>
+          {transcript.length===0&&<span style={{color:'var(--sub)',fontSize:'var(--fs-xs)'}}>Listening for speech…</span>}
+          {transcript.map(e=><div key={e.id} onClick={()=>onStartConv(e.text)} style={{display:'flex',gap:8,cursor:'pointer',padding:'3px 5px',borderRadius:5}}>
+            <span style={{fontSize:'var(--fs-xs)',color:'var(--sub)',flexShrink:0}}>{e.time}</span>
+            <span style={{fontSize:'var(--fs-sm)',color:'var(--sub2)',flex:1,lineHeight:1.4}}>{e.text}</span>
+            {e.conf>0&&<ScoreBadge score={e.conf}/>}
+          </div>)}
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {alerts.length>0&&<div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px'}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Recent Alerts</div>
+        {alerts.slice(0,8).map(a=><div key={a.id} style={{display:'flex',gap:8,padding:'4px 0',borderBottom:'1px solid var(--b1)',fontSize:'var(--fs-xs)'}}>
+          <span style={{color:'var(--sub)',flexShrink:0}}>{a.time}</span>
+          <span style={{color:'var(--sub2)'}}>{a.text}</span>
+        </div>)}
+      </div>}
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   PROFILE EDITOR
+═══════════════════════════════════════════ */
+function ProfileEditor({item,type,onSave,onBack}){
+  const [form,setForm]=useState({...item});
+  const [newFact,setNewFact]=useState('');
+  const f=(field,val)=>setForm(p=>({...p,[field]:val}));
+  function addFact(){if(!newFact.trim())return;setForm(p=>({...p,keyFacts:[...(p.keyFacts||[]),newFact.trim()]}));setNewFact('');}
+  return <div style={{display:'flex',flexDirection:'column',height:'100vh',maxWidth:520,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+      <IBtm onClick={onBack}>←</IBtm>
+      <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>{type==='person'?'👤':'📍'} {form.name||'Profile'}</span>
+      <button onClick={()=>onSave(form)} style={{background:'var(--you)',border:'none',borderRadius:8,padding:'7px 14px',color:'#fff',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer',letterSpacing:'0.06em',textTransform:'uppercase'}}>Save</button>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:'16px 15px',display:'flex',flexDirection:'column',gap:2}}>
+      <Field label="Name" value={form.name||''} onChange={e=>f('name',e.target.value)} placeholder="Name…"/>
+      {type==='person'&&<Field label="Relationship" value={form.relationship||''} onChange={e=>f('relationship',e.target.value)} placeholder="e.g. colleague, friend, doctor…"/>}
+      {type==='place'&&<Field label="Type" value={form.type||''} onChange={e=>f('type',e.target.value)} placeholder="e.g. pharmacy, café, office…"/>}
+      <Field label="Communication Style" value={form.communicationStyle||''} onChange={e=>f('communicationStyle',e.target.value)} placeholder="e.g. formal, friendly, brief…"/>
+      <Field label="Notes" value={form.notes||''} onChange={e=>f('notes',e.target.value)} placeholder="Anything to remember…" multi={true}/>
+      <div style={{marginTop:8}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:8}}>Key Facts</div>
+        {(form.keyFacts||[]).map((f2,i)=><div key={i} style={{display:'flex',gap:7,marginBottom:5,alignItems:'center',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px'}}>
+          <span style={{flex:1,fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{f2}</span>
+          <button onClick={()=>setForm(p=>({...p,keyFacts:p.keyFacts.filter((_,j)=>j!==i)}))} style={{background:'none',border:'none',color:'var(--sub)',cursor:'pointer',fontSize:'0.8rem'}}>✕</button>
+        </div>)}
+        <div style={{display:'flex',gap:6}}>
+          <input value={newFact} onChange={e=>setNewFact(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addFact()} placeholder="Add a fact…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+          <button onClick={addFact} style={{background:'var(--you)',border:'none',borderRadius:'var(--rsm)',padding:'7px 12px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+        </div>
+      </div>
+      {(form.detectedPatterns||[]).length>0&&<div style={{marginTop:12}}>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:8}}>Detected Patterns (AI)</div>
+        {form.detectedPatterns.map((p,i)=><div key={i} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px',fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:4}}>{p}</div>)}
+      </div>}
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   SETTINGS SCREEN
+═══════════════════════════════════════════ */
+function SettingsScreen({profile,onSaveProfile,phrases,onSavePhrases,largeText,onToggleLarge,qualityLog,sessions,onDeleteSession,onBack}){
+  const [tab,setTab]=useState('profile');
+  const [form,setForm]=useState({...profile});
+  const [phrList,setPhrList]=useState([...phrases]);
+  const [newPhr,setNewPhr]=useState('');
+  const [saved,setSaved]=useState(false);
+  const f=(k,v)=>setForm(p=>({...p,[k]:v}));
+
+  function save(){onSaveProfile(form);onSavePhrases(phrList);setSaved(true);setTimeout(()=>setSaved(false),2000);}
+  function addPhr(){if(!newPhr.trim())return;setPhrList(p=>[...p,newPhr.trim()]);setNewPhr('');}
+
+  return <div style={{display:'flex',flexDirection:'column',height:'100vh',maxWidth:520,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+      <IBtm onClick={onBack}>←</IBtm>
+      <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>⚙️ Settings</span>
+      <button onClick={save} style={{background:saved?'var(--them-d)':'var(--you)',border:`1px solid ${saved?'var(--them-b)':'transparent'}`,borderRadius:8,padding:'7px 14px',color:saved?'var(--them)':'#fff',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer',transition:'all .3s'}}>{saved?'✓ Saved':'Save'}</button>
+    </div>
+    <div style={{display:'flex',gap:5,padding:'10px 14px',borderBottom:'1px solid var(--b1)',flexShrink:0,overflowX:'auto'}}>
+      {['profile','phrases','display','data'].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:'6px 12px',background:tab===t?'var(--you-d)':'none',border:`1px solid ${tab===t?'var(--you-b)':'var(--b1)'}`,borderRadius:'var(--rsm)',color:tab===t?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',whiteSpace:'nowrap',textTransform:'capitalize'}}>{t}</button>)}
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:'16px 15px'}}>
+      {tab==='profile'&&<>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+          <Field label="First Name" value={form.firstName||''} onChange={e=>f('firstName',e.target.value)} placeholder="Marie"/>
+          <Field label="Surname" value={form.surname||''} onChange={e=>f('surname',e.target.value)} placeholder="Dubois"/>
+        </div>
+        <Field label="Date of Birth" value={form.dob||''} onChange={e=>f('dob',e.target.value)} type="date"/>
+        <Field label="Emergency Contact Name" value={form.ecName||''} onChange={e=>f('ecName',e.target.value)} placeholder="Jean Dubois"/>
+        <Field label="Emergency Contact Phone" value={form.ecPhone||''} onChange={e=>f('ecPhone',e.target.value)} type="tel" placeholder="+33 6 12 34 56 78"/>
+        <Field label="Medical Notes (shown in SOS)" value={form.medical||''} onChange={e=>f('medical',e.target.value)} placeholder="e.g. Profoundly deaf. Allergic to penicillin." multi={true}/>
+      </>}
+      {tab==='phrases'&&<>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Quick Phrase Bank</div>
+        {phrList.map((p,i)=><div key={i} style={{display:'flex',gap:7,marginBottom:6}}>
+          <input value={p} onChange={e=>setPhrList(pl=>pl.map((ph,j)=>j===i?e.target.value:ph))} style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'8px 11px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+          <button onClick={()=>setPhrList(pl=>pl.filter((_,j)=>j!==i))} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'7px 9px',color:'var(--sub)',cursor:'pointer'}}>✕</button>
+        </div>)}
+        <div style={{display:'flex',gap:6,marginTop:4}}>
+          <input value={newPhr} onChange={e=>setNewPhr(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addPhr()} placeholder="Add phrase…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'8px 11px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+          <button onClick={addPhr} style={{background:'var(--you)',border:'none',borderRadius:'var(--rsm)',padding:'8px 14px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+        </div>
+      </>}
+      {tab==='display'&&<>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px'}}>
+          <div><div style={{fontSize:'var(--fs-sm)',fontWeight:600}}>Large Text</div><div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginTop:2}}>Increases all font sizes</div></div>
+          <button onClick={onToggleLarge} style={{width:48,height:26,borderRadius:13,background:largeText?'var(--you)':'var(--b2)',border:'none',cursor:'pointer',position:'relative',transition:'background .2s'}}>
+            <div style={{width:20,height:20,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:largeText?25:3,transition:'left .2s'}}/>
+          </button>
+        </div>
+      </>}
+      {tab==='data'&&<>
+        <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px',marginBottom:12}}>
+          <div style={{fontSize:'var(--fs-sm)',marginBottom:4}}>{qualityLog.length} retry events logged</div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:10}}>Every "Say Again" event stored silently for analysis.</div>
+          <button onClick={()=>{try{navigator.clipboard.writeText(JSON.stringify(qualityLog,null,2));alert('Copied!');}catch{alert(JSON.stringify(qualityLog,null,2).slice(0,500));}}} style={{background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'7px 13px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>📋 Export JSON</button>
+        </div>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Session History</div>
+        {sessions.slice(0,15).map(s=><div key={s.id} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'11px 13px',marginBottom:6,display:'flex',alignItems:'center',gap:10}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:'var(--fs-xs)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.scenarioName||'Conversation'}</div>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{new Date(s.timestamp).toLocaleDateString()} · {s.messages?.length||0} msgs</div>
+          </div>
+          <button onClick={()=>onDeleteSession(s.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 8px',color:'var(--sub)',cursor:'pointer',fontSize:'0.8rem'}}>🗑</button>
+        </div>)}
+        {sessions.length===0&&<div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:20}}>No sessions yet.</div>}
+      </>}
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   PEOPLE / PLACES LIST
+═══════════════════════════════════════════ */
+function ContactList({items,type,onSelect,onEdit,onDelete,onBack}){
+  const [search,setSearch]=useState('');
+  const filtered=items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()));
+  return <div style={{display:'flex',flexDirection:'column',height:'100vh',maxWidth:520,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+      <IBtm onClick={onBack}>←</IBtm>
+      <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>{type==='person'?'👥 People':'📍 Places'} ({items.length})</span>
+    </div>
+    <div style={{padding:'10px 14px',borderBottom:'1px solid var(--b1)',flexShrink:0}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${type==='person'?'people':'places'}…`} style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'8px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none'}}/>
+    </div>
+    <div style={{flex:1,overflowY:'auto',padding:'12px 14px',display:'flex',flexDirection:'column',gap:7}}>
+      {filtered.map(item=><div key={item.id} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'13px 14px',display:'flex',alignItems:'center',gap:11}}>
+        <span style={{fontSize:'1.2rem'}}>{type==='person'?'👤':'📍'}</span>
+        <div style={{flex:1,minWidth:0,cursor:'pointer'}} onClick={()=>onEdit(item)}>
+          <div style={{fontSize:'var(--fs-sm)',fontWeight:700}}>{item.name}</div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{type==='person'?(item.communicationStyle||item.relationship||`${item.conversationCount||0} conversations`):(item.type||`${item.visitCount||0} visits`)}</div>
+          {item.keyFacts?.length>0&&<div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.keyFacts[0]}</div>}
+        </div>
+        <button onClick={()=>onSelect(item)} style={{background:type==='person'?'var(--you-d)':'var(--them-d)',border:`1px solid ${type==='person'?'var(--you-b)':'var(--them-b)'}`,borderRadius:8,padding:'6px 10px',color:type==='person'?'var(--you)':'var(--them)',fontSize:'var(--fs-xs)',cursor:'pointer',flexShrink:0}}>
+          {type==='person'?'Chat':'Visit'}
+        </button>
+        <button onClick={()=>onDelete(item.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:8,padding:'6px 8px',color:'var(--sub)',cursor:'pointer',fontSize:'0.8rem'}}>✕</button>
+      </div>)}
+      {filtered.length===0&&<div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:30,border:'1px dashed var(--b1)',borderRadius:'var(--r)'}}>No {type==='person'?'people':'places'} yet.<br/>Created automatically during conversations.</div>}
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   HOME SCREEN
+═══════════════════════════════════════════ */
+function HomeScreen({profile,people,places,ambientLevel,onQuickStart,onStartWithContact,onGoTo,setShowEnv}){
+  const [tab,setTab]=useState('people');
+  const badge=(profile.firstName?(profile.firstName[0]+(profile.surname?.[0]||'')).toUpperCase():'?');
+  const recentPeople=useMemo(()=>[...people].sort((a,b)=>new Date(b.lastSeen||0)-new Date(a.lastSeen||0)).slice(0,4),[people]);
+  const recentPlaces=useMemo(()=>[...places].sort((a,b)=>new Date(b.lastVisited||0)-new Date(a.lastVisited||0)).slice(0,4),[places]);
+
+  return <div style={{display:'flex',flexDirection:'column',height:'100vh',width:'100%',maxWidth:520,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+      <div style={{fontWeight:800,fontSize:'0.72rem',letterSpacing:'0.22em',textTransform:'uppercase',color:'var(--you)',display:'flex',alignItems:'center',gap:7,flex:1}}>
+        <span style={{width:7,height:7,borderRadius:'50%',background:'var(--you)',boxShadow:'0 0 10px var(--you)',display:'inline-block'}}/>VoiceBridge
+      </div>
+      <AmbientDot level={ambientLevel} onClick={()=>setShowEnv(true)}/>
+      <div style={{width:30,height:30,borderRadius:'50%',background:'var(--you-d)',border:'1.5px solid var(--you-b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.6rem',fontWeight:800,color:'var(--you)'}}>{badge}</div>
+      <IBtm onClick={()=>onGoTo('settings')}>⚙️</IBtm>
+    </div>
+
+    <div style={{flex:1,overflowY:'auto',padding:'16px 14px 30px',display:'flex',flexDirection:'column',gap:14}}>
+      {/* Quick Start */}
+      <button onClick={onQuickStart} style={{background:'linear-gradient(135deg,var(--you-d),#0a2040)',border:'1.5px solid var(--you-b)',borderRadius:'var(--r)',padding:'20px 18px',cursor:'pointer',display:'flex',alignItems:'center',gap:14,textAlign:'left',width:'100%'}}>
+        <span style={{fontSize:'2rem'}}>💬</span>
+        <div>
+          <div style={{fontSize:'var(--fs-lg)',fontWeight:700,color:'var(--you)',marginBottom:3}}>Quick Start</div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>Tap to begin a conversation instantly</div>
+        </div>
+        <span style={{marginLeft:'auto',color:'var(--you)',fontSize:'1.3rem'}}>›</span>
+      </button>
+
+      {/* Recent */}
+      {(recentPeople.length>0||recentPlaces.length>0)&&<div>
+        <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10}}>Recent</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {recentPeople.slice(0,2).map(p=><button key={p.id} onClick={()=>onStartWithContact(p,null)} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 13px',display:'flex',alignItems:'center',gap:9,textAlign:'left',cursor:'pointer',width:'100%',transition:'all .18s'}}>
+            <span style={{fontSize:'1.2rem'}}>👤</span>
+            <div style={{minWidth:0}}><div style={{fontSize:'var(--fs-sm)',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div><div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.conversationCount||0} chats</div></div>
+          </button>)}
+          {recentPlaces.slice(0,2).map(p=><button key={p.id} onClick={()=>onStartWithContact(null,p)} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 13px',display:'flex',alignItems:'center',gap:9,textAlign:'left',cursor:'pointer',width:'100%',transition:'all .18s'}}>
+            <span style={{fontSize:'1.2rem'}}>📍</span>
+            <div style={{minWidth:0}}><div style={{fontSize:'var(--fs-sm)',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div><div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.visitCount||0} visits</div></div>
+          </button>)}
+        </div>
+      </div>}
+
+      {/* Tabs */}
+      <div>
+        <div style={{display:'flex',gap:7,marginBottom:10}}>
+          {['people','places'].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:'8px',background:tab===t?'var(--you-d)':'var(--s1)',border:`1px solid ${tab===t?'var(--you-b)':'var(--b1)'}`,borderRadius:'var(--rsm)',color:tab===t?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:700,cursor:'pointer'}}>
+            {t==='people'?`👥 People (${people.length})`:`📍 Places (${places.length})`}
+          </button>)}
+        </div>
+        <button onClick={()=>onGoTo(tab)} style={{width:'100%',background:'transparent',border:'1px dashed var(--b2)',borderRadius:'var(--r)',padding:'10px',color:'var(--sub2)',fontSize:'var(--fs-sm)',cursor:'pointer',marginBottom:7}}>
+          {tab==='people'?'👥 View all people →':'📍 View all places →'}
+        </button>
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {(tab==='people'?people:places).slice(0,5).map(item=><button key={item.id} onClick={()=>tab==='people'?onStartWithContact(item,null):onStartWithContact(null,item)} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px',display:'flex',alignItems:'center',gap:11,textAlign:'left',cursor:'pointer',width:'100%',transition:'all .18s'}}>
+            <span style={{fontSize:'1.1rem'}}>{tab==='people'?'👤':'📍'}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:'var(--fs-sm)',fontWeight:700}}>{item.name}</div>
+              <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tab==='people'?(item.communicationStyle||item.relationship||'No details yet'):(item.type||'No details yet')}</div>
+            </div>
+            <span style={{color:'var(--sub)'}}>›</span>
+          </button>)}
+          {(tab==='people'?people:places).length===0&&<div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:20,border:'1px dashed var(--b1)',borderRadius:'var(--r)'}}>Created automatically during conversations.</div>}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════
+   CONVERSATION SCREEN
+═══════════════════════════════════════════ */
+function ConvScreen({profile,people,places,initialPerson,initialPlace,onEnd,onGoSettings,ambientLevel,setShowEnv}){
+  const [messages,setMessages]=useState([]);
+  const [person,setPerson]=useState(initialPerson);
+  const [place,setPlace]=useState(initialPlace);
+  const [inputVal,setInputVal]=useState('');
+  const [predictions,setPredictions]=useState([]);
+  const [sugs,setSugs]=useState([]);
+  const [showSugs,setShowSugs]=useState(false);
+  const [showPhrases,setShowPhrases]=useState(false);
+  const [phrases,setPhrases]=useState(DEFAULT_PHRASES);
+  const [isListening,setIsListening]=useState(false);
+  const [isSpeaking,setIsSpeaking]=useState(false);
+  const [isBusy,setIsBusy]=useState(false);
+  const [isRecording,setIsRecording]=useState(true);
+  const [statusLabel,setStatusLabel]=useState('ready');
+  const [personDrop,setPersonDrop]=useState(false);
+  const [placeDrop,setPlaceDrop]=useState(false);
+  const [pSearch,setPSearch]=useState('');
+  const [plSearch,setPlSearch]=useState('');
+  const [newPN,setNewPN]=useState('');
+  const [newPlN,setNewPlN]=useState('');
+  const [showSOS,setShowSOS]=useState(false);
+  const [showScreen,setShowScreen]=useState(false);
+  const [confirm,setConfirm]=useState(null);
+  const [qualityLog,setQualityLog]=useState([]);
+  const chatRef=useRef(null);
+  const inputRef=useRef(null);
+  const recRef=useRef(null);
+  const sessionId=useRef(uid());
+
+  useEffect(()=>{
+    dbGet('settings','phrases').then(p=>{if(p?.data)setPhrases(p.data);});
+    if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=()=>{};
+  },[]);
+
+  useEffect(()=>{scrollDown();},[messages]);
+
+  function scrollDown(){setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTo({top:chatRef.current.scrollHeight,behavior:'smooth'});},60);}
+
+  function addMsg(role,text,extra={}){
+    const m={id:uid(),role,text,time:Date.now(),...extra};
+    setMessages(p=>[...p,m]);
+    return m.id;
+  }
+  function addSys(text){setMessages(p=>[...p,{id:uid(),role:'system',text}]);}
+
+  const pipCol=isSpeaking?'var(--you)':isListening?'var(--them)':statusLabel.includes('✦')?'var(--gold)':'var(--sub)';
+
+  /* SEND */
+  async function send(text){
+    if(!text.trim()||isBusy)return;
+    setInputVal('');setPredictions([]);setShowSugs(false);setShowPhrases(false);
+    setIsBusy(true);setIsSpeaking(true);setStatusLabel('🔊 Speaking aloud…');
+    addMsg('you',text);
+    await tts(text);
+    setIsSpeaking(false);
+    listen();
+  }
+
+  /* LISTEN */
+  function listen(){
+    if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){addSys('Speech recognition not supported. Use Chrome or Edge.');setIsBusy(false);setStatusLabel('ready');return;}
+    stopListening();
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const r=new SR();r.continuous=true;r.interimResults=true;r.lang='en-US';
+    recRef.current=r;
+    let finalBuf='',lastConf=0,silTimer=null;
+    const intId=uid();
+    setIsListening(true);setStatusLabel('🎙 Listening…');
+    setMessages(p=>[...p,{id:intId,role:'them',text:'…',interim:true,conf:0}]);
+
+    r.onresult=e=>{
+      clearTimeout(silTimer);
+      let interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal){finalBuf+=e.results[i][0].transcript+' ';lastConf=Math.round((e.results[i][0].confidence||0.7)*100);}
+        else interim+=e.results[i][0].transcript;
+      }
+      const disp=finalBuf+interim;
+      setMessages(p=>p.map(m=>m.id===intId?{...m,text:disp||'…',conf:lastConf}:m));
+      silTimer=setTimeout(()=>finaliseListen(intId,finalBuf.trim()||disp.trim(),lastConf,r),2500);
+    };
+    r.onerror=e=>{if(e.error==='no-speech')return;stopListening();setMessages(p=>p.filter(m=>m.id!==intId));addSys('Could not hear. Tap 🎙 to try again.');setIsBusy(false);setStatusLabel('ready');};
+    r.onend=()=>{if(isListening&&finalBuf.length<2)try{r.start();}catch{}};
+    try{r.start();}catch(e){setIsBusy(false);setStatusLabel('ready');}
+  }
+
+  function finaliseListen(intId,text,conf,r){
+    stopListening();
+    if(!text){setMessages(p=>p.filter(m=>m.id!==intId));setIsBusy(false);setStatusLabel('ready');return;}
+    setMessages(p=>p.map(m=>m.id===intId?{...m,text,interim:false,conf:conf||70,isLatest:true}:({...m,isLatest:false})));
+    getAISugs(text);
+  }
+
+  function stopListening(){
+    try{recRef.current?.stop();}catch{}
+    recRef.current=null;setIsListening(false);setStatusLabel('ready');
+  }
+
+  function toggleListen(){if(isListening){stopListening();setIsBusy(false);}else{setIsBusy(true);listen();}}
+
+  /* SAY AGAIN */
+  function sayAgain(msgId){
+    stopListening();setIsBusy(true);setIsListening(true);setStatusLabel('🎙 Listening again…');
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const r=new SR();r.continuous=false;r.interimResults=false;r.lang='en-US';
+    recRef.current=r;
+    r.onresult=e=>{
+      const newT=e.results[0][0].transcript;
+      const newC=Math.round((e.results[0][0].confidence||0.7)*100);
+      setMessages(p=>{
+        const orig=p.find(m=>m.id===msgId);
+        const entry={id:uid(),timestamp:new Date().toISOString(),original:{text:orig?.text,conf:orig?.conf},replacement:{text:newT,conf:newC},improvement:newC-(orig?.conf||0)};
+        setQualityLog(q=>[...q,entry]);dbPut('quality',entry);
+        return p.map(m=>m.id===msgId?{...m,struckText:m.text,struckConf:m.conf,text:newT,conf:newC,hasStruck:true}:m);
+      });
+      stopListening();setIsBusy(false);
+    };
+    r.onerror=()=>{stopListening();setIsBusy(false);};
+    try{r.start();}catch{stopListening();setIsBusy(false);}
+  }
+
+  /* AI SUGGESTIONS */
+  async function getAISugs(theirMsg){
+    setStatusLabel('✦ Thinking…');
+    const hist=messages.slice(-8).filter(m=>!m.interim).map(m=>`${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+    const pCtx=[profile.firstName&&`User: ${profile.firstName}`,profile.medical&&`Medical: ${profile.medical}`].filter(Boolean).join('. ');
+    const perCtx=person?`Talking to: ${person.name}. ${person.communicationStyle||''} Facts: ${(person.keyFacts||[]).slice(0,3).join(', ')}`:'';
+    const plCtx=place?`Location: ${place.name}. ${(place.commonTopics||[]).slice(0,3).join(', ')}`:'';
+    const prompt=`Real-time communication assistant for deaf/non-speaking person.
+${pCtx?`User context: ${pCtx}\n`:''}${perCtx?`${perCtx}\n`:''}${plCtx?`${plCtx}\n`:''}
+Conversation:
+${hist}
+
+They just said: "${theirMsg}"
+
+Generate exactly 3 short reply suggestions DIRECTLY responding to "${theirMsg}".
+Rules: under 18 words each, natural, varied (agree/clarify/action).
+Return ONLY raw JSON array of 3 strings. No markdown.`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:300,messages:[{role:'user',content:prompt}]})});
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||'[]';
+      let s;try{s=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch{s=fallbackSugs(theirMsg);}
+      setSugs(s.slice(0,3));setShowSugs(true);
+    }catch{setSugs(fallbackSugs(theirMsg));setShowSugs(true);}
+    setIsBusy(false);setStatusLabel('ready');
+  }
+
+  function fallbackSugs(last){
+    const l=last.toLowerCase();
+    if(l.includes('?'))return['Yes, that is correct.','No, let me explain.','Could you repeat that?'];
+    if(l.includes('sorry'))return['No worries at all.','That is okay.','Please do not worry.'];
+    return['I understand, thank you.','Could you clarify that?','One moment please.'];
+  }
+
+  /* POST-SESSION EXTRACTION */
+  async function extractAndEnd(msgs){
+    if(msgs.length>0){
+      const transcript=msgs.filter(m=>m.role!=='system').map(m=>`${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+      try{
+        const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,messages:[{role:'user',content:`Extract insights from this conversation. Return JSON: {"keyFacts":[],"patterns":[],"topics":[],"communicationStyle":""}. Conversation:\n${transcript}\nReturn ONLY raw JSON.`}]})});
+        const data=await res.json();
+        const raw=data.content?.[0]?.text||'{}';
+        let ins;try{ins=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch{ins={};}
+        if(person&&ins){
+          const updated={...person,keyFacts:[...new Set([...(person.keyFacts||[]),...(ins.keyFacts||[])].slice(0,20))],detectedPatterns:[...new Set([...(person.detectedPatterns||[]),...(ins.patterns||[])].slice(0,10))],communicationStyle:ins.communicationStyle||person.communicationStyle,lastSeen:new Date().toISOString(),conversationCount:(person.conversationCount||0)+1};
+          await dbPut('people',updated);
+        }
+        if(place&&ins){
+          const updated={...place,commonTopics:[...new Set([...(place.commonTopics||[]),...(ins.topics||[])].slice(0,20))],lastVisited:new Date().toISOString(),visitCount:(place.visitCount||0)+1};
+          await dbPut('places',updated);
+        }
+      }catch{}
+      const archived={id:sessionId.current,personId:person?.id,placeId:place?.id,scenarioName:person?.name||place?.name||'Conversation',messages:msgs,timestamp:new Date().toISOString()};
+      await dbPut('sessions',archived);
+    }
+    onEnd();
+  }
+
+  /* SPLIT */
+  async function split(){
+    const seg=messages.filter(m=>m.role!=='system');
+    if(seg.length>0){const archived={id:uid(),personId:person?.id,placeId:place?.id,scenarioName:person?.name||'Intersession',messages:seg,timestamp:new Date().toISOString()};await dbPut('sessions',archived);}
+    setMessages(p=>[...p,{id:uid(),role:'system',text:`─── New person · ${place?.name||'same place'} ───`}]);
+    setPerson(null);setSugs([]);setShowSugs(false);setIsBusy(false);stopListening();
+  }
+
+  /* NEW CHAT */
+  function newChat(){setConfirm({msg:'End session and start fresh?',confirmText:'Yes, new chat',onConfirm:async()=>{await extractAndEnd(messages);setConfirm(null);}});}
+
+  /* PERSON / PLACE CREATION */
+  function createPerson(name){const p={id:uid(),name,relationship:'',communicationStyle:'',keyFacts:[],detectedPatterns:[],linkedPlaces:[],conversationCount:0,lastSeen:new Date().toISOString(),notes:''};dbPut('people',p);return p;}
+  function createPlace(name){const p={id:uid(),name,type:'',linkedPeople:[],commonTopics:[],visitCount:0,lastVisited:new Date().toISOString(),notes:''};dbPut('places',p);return p;}
+
+  /* WORD PREDICTION */
+  const WORDS=['I','the','a','is','are','was','have','can','could','would','will','please','thank','sorry','need','want','help','yes','no','okay','hello','understand','know','here','today','now'];
+  function updatePreds(val){
+    const parts=val.split(/\s+/);const last=parts[parts.length-1].toLowerCase();
+    if(!last||val.endsWith(' ')){setPredictions([]);return;}
+    setPredictions(WORDS.filter(w=>w.toLowerCase().startsWith(last)&&w.toLowerCase()!==last).slice(0,4));
+  }
+  function addPred(w){const parts=inputVal.split(/\s+/);parts[parts.length-1]=w;setInputVal(parts.join(' ')+' ');setPredictions([]);inputRef.current?.focus();}
+
+  /* MSG ACTIONS */
+  function editMsg(id,text){setMessages(p=>p.map(m=>m.id===id?{...m,text}:m));}
+  function deleteMsg(id){setMessages(p=>p.filter(m=>m.id!==id));}
+  function flagMsg(id){setMessages(p=>p.map(m=>m.id===id?{...m,flagged:!m.flagged}:m));}
+  function replayMsg(text){tts(text);}
+
+  function exportConv(){const lines=messages.filter(m=>m.role!=='system').map(m=>`[${m.role.toUpperCase()}] ${m.text}`).join('\n');try{navigator.clipboard.writeText(lines);addSys('✓ Copied to clipboard.');}catch{alert(lines);}}
+
+  const latestThemIdx=useMemo(()=>{let l=-1;messages.forEach((m,i)=>{if(m.role==='them'&&!m.interim)l=i;});return l;},[messages]);
+  const filtPeople=people.filter(p=>p.name.toLowerCase().includes(pSearch.toLowerCase()));
+  const filtPlaces=places.filter(p=>p.name.toLowerCase().includes(plSearch.toLowerCase()));
+
+  return <>
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',width:'100%',maxWidth:520,margin:'0 auto'}}>
+      {/* Topbar */}
+      <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 13px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0}}>
+        <IBtm onClick={()=>setConfirm({msg:'End this session?',confirmText:'Yes, end',onConfirm:async()=>{await extractAndEnd(messages);setConfirm(null);}})}>←</IBtm>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:'var(--fs-sm)',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{person?.name||place?.name||'Conversation'}</div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',display:'flex',alignItems:'center',gap:5,marginTop:1}}>
+            <div style={{width:5,height:5,borderRadius:'50%',background:pipCol,animation:(isSpeaking||isListening)?'blink .6s infinite alternate':'none',flexShrink:0}}/>
+            {statusLabel}
+          </div>
+        </div>
+        <AmbientDot level={ambientLevel} onClick={()=>setShowEnv(true)}/>
+        <IBtm onClick={()=>setShowScreen(true)} title="Show Screen">🃏</IBtm>
+        <IBtm onClick={()=>setShowSOS(true)} style={{borderColor:'var(--red-b)',color:'var(--red)'}} title="SOS">🆘</IBtm>
+      </div>
+
+      {/* Context bar */}
+      <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 11px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0,flexWrap:'wrap',position:'relative'}}>
+        {/* Place chip */}
+        <div style={{position:'relative'}}>
+          <Pill onClick={()=>{setPlaceDrop(!placeDrop);setPersonDrop(false);}} active={!!place}>📍 {place?.name||'Place'} ▾</Pill>
+          {placeDrop&&<div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:8,zIndex:50,minWidth:200,maxHeight:220,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}}>
+            <input value={plSearch} onChange={e=>setPlSearch(e.target.value)} placeholder="Search…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:5,padding:'6px 9px',color:'var(--text)',fontSize:'var(--fs-xs)',marginBottom:6,outline:'none'}}/>
+            {filtPlaces.map(p=><button key={p.id} onClick={()=>{setPlace(p);setPlaceDrop(false);}} style={{width:'100%',textAlign:'left',background:'none',border:'none',padding:'6px 7px',color:'var(--text)',fontSize:'var(--fs-xs)',cursor:'pointer',display:'block',borderRadius:5}}>{p.name}</button>)}
+            <div style={{display:'flex',gap:5,marginTop:5}}>
+              <input value={newPlN} onChange={e=>setNewPlN(e.target.value)} placeholder="New place…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:5,padding:'5px 7px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none'}} onKeyDown={e=>e.key==='Enter'&&newPlN.trim()&&(setPlace(createPlace(newPlN.trim())),setNewPlN(''),setPlaceDrop(false))}/>
+              <button onClick={()=>newPlN.trim()&&(setPlace(createPlace(newPlN.trim())),setNewPlN(''),setPlaceDrop(false))} style={{background:'var(--you)',border:'none',borderRadius:5,padding:'5px 9px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+            </div>
+            <button onClick={()=>{setPlace(null);setPlaceDrop(false);}} style={{width:'100%',background:'none',border:'none',padding:'5px 7px',color:'var(--sub)',fontSize:'var(--fs-xs)',cursor:'pointer',textAlign:'left',marginTop:3}}>✕ Clear</button>
+          </div>}
+        </div>
+
+        {/* Person chip */}
+        <div style={{position:'relative'}}>
+          <Pill onClick={()=>{setPersonDrop(!personDrop);setPlaceDrop(false);}} active={!!person}>👤 {person?.name||'Person'} ▾</Pill>
+          {personDrop&&<div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:8,zIndex:50,minWidth:200,maxHeight:220,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}}>
+            <input value={pSearch} onChange={e=>setPSearch(e.target.value)} placeholder="Search…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:5,padding:'6px 9px',color:'var(--text)',fontSize:'var(--fs-xs)',marginBottom:6,outline:'none'}}/>
+            {filtPeople.map(p=><button key={p.id} onClick={()=>{setPerson(p);setPersonDrop(false);}} style={{width:'100%',textAlign:'left',background:'none',border:'none',padding:'6px 7px',color:'var(--text)',fontSize:'var(--fs-xs)',cursor:'pointer',display:'block',borderRadius:5}}>{p.name}</button>)}
+            <div style={{display:'flex',gap:5,marginTop:5}}>
+              <input value={newPN} onChange={e=>setNewPN(e.target.value)} placeholder="New person…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:5,padding:'5px 7px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none'}} onKeyDown={e=>e.key==='Enter'&&newPN.trim()&&(setPerson(createPerson(newPN.trim())),setNewPN(''),setPersonDrop(false))}/>
+              <button onClick={()=>newPN.trim()&&(setPerson(createPerson(newPN.trim())),setNewPN(''),setPersonDrop(false))} style={{background:'var(--you)',border:'none',borderRadius:5,padding:'5px 9px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+            </div>
+            <button onClick={()=>{setPerson(null);setPersonDrop(false);}} style={{width:'100%',background:'none',border:'none',padding:'5px 7px',color:'var(--sub)',fontSize:'var(--fs-xs)',cursor:'pointer',textAlign:'left',marginTop:3}}>✕ Clear</button>
+          </div>}
+        </div>
+
+        <div style={{flex:1}}/>
+        <Pill onClick={()=>setIsRecording(!isRecording)} style={{borderColor:isRecording?'var(--red-b)':'var(--b1)',color:isRecording?'var(--red)':'var(--sub)'}}>{isRecording?'🔴':'⚫'}</Pill>
+        <Pill onClick={split} title="Split — new person">✂️</Pill>
+        <Pill onClick={newChat} title="New chat">🔄</Pill>
+        <Pill onClick={exportConv} title="Export">📋</Pill>
+      </div>
+
+      {/* Chat log */}
+      <div ref={chatRef} style={{flex:1,overflowY:'auto',padding:'13px 12px',display:'flex',flexDirection:'column',gap:10}}>
+        {messages.length===0&&<div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:8,color:'var(--sub)',padding:40,textAlign:'center'}}>
+          <div style={{fontSize:'2.2rem',opacity:.3}}>💬</div>
+          <div style={{fontSize:'var(--fs-sm)',lineHeight:1.7}}>Type a message or tap 🎙<br/>It will be spoken aloud.</div>
+        </div>}
+        {messages.map((msg,idx)=><MessageBubble key={msg.id} msg={msg} isLatest={idx===latestThemIdx} onSayAgain={()=>sayAgain(msg.id)} onReplay={replayMsg} onDelete={deleteMsg} onFlag={flagMsg} onEdit={editMsg} placeName={place?.name||''}/>)}
+      </div>
+
+      {/* Bottom zone */}
+      <div style={{flexShrink:0,background:'var(--s1)',borderTop:'1px solid var(--b1)'}}>
+        {/* Thinking */}
+        {statusLabel.includes('✦')&&<div style={{padding:'8px 13px 2px',display:'flex',flexDirection:'column',gap:4}}>
+          {['70%','48%'].map((w,i)=><div key={i} style={{height:8,width:w,borderRadius:4,background:'linear-gradient(90deg,var(--s2) 25%,var(--b2) 50%,var(--s2) 75%)',backgroundSize:'200% 100%',animation:'shim 1.3s infinite'}}/>)}
+        </div>}
+
+        {/* AI Suggestions */}
+        {showSugs&&sugs.length>0&&<div style={{padding:'8px 12px 0'}}>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:6,display:'flex',alignItems:'center',gap:5}}>
+            <span style={{fontSize:'0.5rem'}}>✦</span>Suggested replies
+          </div>
+          {sugs.map((s,i)=><button key={i} onClick={()=>{setShowSugs(false);send(s);}} style={{width:'100%',background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',gap:8,marginBottom:5,lineHeight:1.4,transition:'all .12s'}}>
+            {s}<span style={{marginLeft:'auto',color:'var(--sub)',fontSize:'var(--fs-xs)',flexShrink:0}}>›</span>
+          </button>)}
+        </div>}
+
+        {/* Phrases */}
+        {showPhrases&&<div style={{padding:'8px 12px 0',maxHeight:140,overflowY:'auto',borderTop:'1px solid var(--b1)'}}>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Quick Phrases</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+            {phrases.map((p,i)=><button key={i} onClick={()=>{setShowPhrases(false);send(p);}} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',color:'var(--sub2)',fontSize:'var(--fs-xs)',padding:'6px 10px',cursor:'pointer',transition:'all .12s'}}>{p}</button>)}
+          </div>
+        </div>}
+
+        {/* Predictions */}
+        {predictions.length>0&&<div style={{display:'flex',gap:5,padding:'6px 12px 0',overflowX:'auto'}}>
+          {predictions.map((w,i)=><button key={i} onClick={()=>addPred(w)} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',color:'var(--sub2)',fontSize:'var(--fs-xs)',padding:'5px 10px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>{w}</button>)}
+        </div>}
+
+        {/* Input row */}
+        <div style={{padding:'8px 12px 16px',display:'flex',gap:8,alignItems:'flex-end'}}>
+          <button onClick={()=>{setShowPhrases(!showPhrases);setShowSugs(false);}} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 11px',borderRadius:20,border:`1px solid ${showPhrases?'var(--you-b)':'var(--b1)'}`,background:showPhrases?'var(--you-d)':'var(--s2)',color:showPhrases?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',whiteSpace:'nowrap',height:44,flexShrink:0}}>⚡</button>
+          <div style={{flex:1,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--r)',display:'flex',alignItems:'flex-end',padding:'2px 6px 2px 12px',gap:4,transition:'border-color .2s'}}>
+            <textarea ref={inputRef} value={inputVal} onChange={e=>{setInputVal(e.target.value);e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,90)+'px';updatePreds(e.target.value);}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inputVal);}}} placeholder="Type your message…" rows={1} style={{flex:1,background:'none',border:'none',outline:'none',color:'var(--text)',fontSize:'var(--fs)',fontWeight:400,padding:'10px 0',resize:'none',maxHeight:90,lineHeight:1.4,fontFamily:"'Syne',sans-serif"}}/>
+            <button disabled={isBusy||!inputVal.trim()} onClick={()=>send(inputVal)} style={{background:'var(--you)',border:'none',borderRadius:9,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.85rem',marginBottom:3,cursor:'pointer',color:'#fff',opacity:isBusy||!inputVal.trim()?.4:1,transition:'opacity .2s'}}>▶</button>
+          </div>
+          <button disabled={isSpeaking} onClick={toggleListen} style={{background:'var(--them-d)',border:`1px solid ${isListening?'var(--them)':'var(--them-b)'}`,borderRadius:'var(--r)',width:46,height:46,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.05rem',cursor:'pointer',animation:isListening?'ring 1.2s infinite':'none',transition:'all .2s'}}>🎙</button>
+        </div>
+      </div>
+    </div>
+
+    {showSOS&&<SOSOverlay profile={profile} onClose={()=>setShowSOS(false)}/>}
+    {showScreen&&<ShowScreenOverlay profile={profile} onClose={()=>setShowScreen(false)}/>}
+    {confirm&&<ConfirmDialog {...confirm} onCancel={()=>setConfirm(null)}/>}
+  </>;
+}
+
+/* ═══════════════════════════════════════════
+   MAIN APP
+═══════════════════════════════════════════ */
+function App(){
+  const [ready,setReady]=useState(false);
+  const [screen,setScreen]=useState('home');
+  const [prevScreen,setPrevScreen]=useState('home');
+  const [profile,setProfile]=useState({firstName:'',surname:'',dob:'',ecName:'',ecPhone:'',medical:''});
+  const [phrases,setPhrases]=useState(DEFAULT_PHRASES);
+  const [people,setPeople]=useState([]);
+  const [places,setPlaces]=useState([]);
+  const [sessions,setSessions]=useState([]);
+  const [qualityLog,setQualityLog]=useState([]);
+  const [largeText,setLargeText]=useState(false);
+  const [convPerson,setConvPerson]=useState(null);
+  const [convPlace,setConvPlace]=useState(null);
+  const [editItem,setEditItem]=useState(null);
+  const [editType,setEditType]=useState(null);
+  const [showEnv,setShowEnv]=useState(false);
+  const [confirm,setConfirm]=useState(null);
+  // Ambient
+  const [ambientLevel,setAmbientLevel]=useState(0);
+  const [ambientVolume,setAmbientVolume]=useState(0);
+  const [ambientTranscript,setAmbientTranscript]=useState([]);
+  const [soundLevels,setSoundLevels]=useState({});
+  const [ambientAlerts,setAmbientAlerts]=useState([]);
+  const ambCtx=useRef(null);ambientAnimRef=useRef(null);ambRecRef=useRef(null);
+
+  useEffect(()=>{
+    (async()=>{
+      const [p,ph,pp,pl,ss,ql,lt]=await Promise.all([dbGet('settings','profile'),dbGet('settings','phrases'),dbAll('people'),dbAll('places'),dbAll('sessions'),dbAll('quality'),dbGet('settings','largeText')]);
+      if(p?.data)setProfile(p.data);
+      if(ph?.data)setPhrases(ph.data);
+      setPeople(pp);setPlaces(pl);setSessions(ss);setQualityLog(ql);
+      if(lt?.data)setLargeText(lt.data);
+      setReady(true);
+    })();
+    if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=()=>{};
+    startAmbient();
+    return stopAmbient;
+  },[]);
+
+  useEffect(()=>{document.body.classList.toggle('large',largeText);},[largeText]);
+
+  // Ambient monitoring
+  function startAmbient(){
+    if(!navigator.mediaDevices?.getUserMedia)return;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      const analyser=ctx.createAnalyser();analyser.fftSize=256;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      ambCtx.current={ctx,analyser,stream};
+      const data=new Uint8Array(analyser.frequencyBinCount);
+      let fc=0;
+      function tick(){
+        ambientAnimRef.current=requestAnimationFrame(tick);
+        analyser.getByteFrequencyData(data);
+        const avg=data.reduce((a,b)=>a+b,0)/data.length;
+        const vol=Math.round(avg/2.55);
+        setAmbientVolume(vol);
+        const voiceBins=Array.from(data.slice(3,30));
+        const vAvg=voiceBins.reduce((a,b)=>a+b,0)/voiceBins.length;
+        const isV=vAvg>30&&vol>25;
+        let lvl=0;if(vol>5)lvl=1;if(vol>20)lvl=2;if(vol>40)lvl=3;if(isV)lvl=Math.max(lvl,3);if(vol>65)lvl=4;
+        setAmbientLevel(lvl);
+        fc++;if(fc%15===0)setSoundLevels({voice:isV?Math.min(100,Math.round(vAvg*2)):0,music:vol>15&&!isV?Math.min(100,vol):0});
+      }
+      tick();
+      startNameDetection();
+    }).catch(()=>{});
+  }
+
+  function stopAmbient(){
+    if(ambientAnimRef.current)cancelAnimationFrame(ambientAnimRef.current);
+    ambCtx.current?.stream?.getTracks().forEach(t=>t.stop());
+    try{ambRecRef.current?.stop();}catch{}
+  }
+
+  function startNameDetection(){
+    if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window))return;
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const r=new SR();r.continuous=true;r.interimResults=true;r.lang='en-US';
+    r.onresult=e=>{
+      const t=Array.from(e.results).map(r=>r[0].transcript).join(' ');
+      const fname=(profile.firstName||'').toLowerCase();
+      if(fname&&t.toLowerCase().includes(fname)){
+        setAmbientLevel(5);
+        const entry={id:uid(),time:new Date().toLocaleTimeString(),text:`Your name "${profile.firstName}" was spoken`,type:'name'};
+        setAmbientAlerts(p=>[entry,...p].slice(0,30));
+      }
+      if(e.results[e.results.length-1].isFinal){
+        const final=e.results[e.results.length-1][0];
+        const conf=Math.round((final.confidence||0.5)*100);
+        const entry={id:uid(),time:new Date().toLocaleTimeString(),text:final.transcript,conf};
+        setAmbientTranscript(p=>[entry,...p].slice(0,80));
+      }
+    };
+    r.onerror=()=>{};
+    r.onend=()=>setTimeout(startNameDetection,2000);
+    ambRecRef.current=r;
+    try{r.start();}catch{}
+  }
+
+  async function saveProfile(p){setProfile(p);await dbPut('settings',{id:'profile',data:p});}
+  async function savePhrases(ph){setPhrases(ph);await dbPut('settings',{id:'phrases',data:ph});}
+  async function toggleLarge(){const n=!largeText;setLargeText(n);await dbPut('settings',{id:'largeText',data:n});}
+
+  async function savePersonEdit(updated){
+    const newPpl=people.map(p=>p.id===updated.id?updated:p);
+    setPeople(newPpl);await dbPut('people',updated);
+    goBack();
+  }
+  async function savePlaceEdit(updated){
+    const newPl=places.map(p=>p.id===updated.id?updated:p);
+    setPlaces(newPl);await dbPut('places',updated);
+    goBack();
+  }
+
+  async function deletePerson(id){setPeople(p=>p.filter(x=>x.id!==id));await dbGet('people',id).then(()=>_db.transaction('people','readwrite').objectStore('people').delete(id));}
+  async function deletePlace(id){setPlaces(p=>p.filter(x=>x.id!==id));await dbGet('places',id).then(()=>_db.transaction('places','readwrite').objectStore('places').delete(id));}
+  async function deleteSession(id){setSessions(p=>p.filter(s=>s.id!==id));await dbDel('sessions',id);}
+
+  function goTo(s){setPrevScreen(screen);setScreen(s);}
+  function goBack(){setScreen(prevScreen||'home');}
+
+  function startConv(person=null,place=null){setConvPerson(person);setConvPlace(place);setPrevScreen(screen);setScreen('conv');}
+
+  function onConvEnd(){
+    // Refresh people/places after session
+    dbAll('people').then(setPeople);
+    dbAll('places').then(setPlaces);
+    dbAll('sessions').then(setSessions);
+    setScreen('home');
+  }
+
+  if(!ready)return <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',color:'var(--sub2)',fontSize:'0.8rem',letterSpacing:'0.1em',flexDirection:'column',gap:12}}>
+    <div style={{width:24,height:24,border:'2px solid var(--b2)',borderTopColor:'var(--you)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+    <span>LOADING…</span>
+  </div>;
+
+  return <div style={{height:'100%',width:'100%',position:'relative'}}>
+    {screen==='home'&&<HomeScreen profile={profile} people={people} places={places} ambientLevel={ambientLevel} onQuickStart={()=>startConv()} onStartWithContact={(p,pl)=>startConv(p,pl)} onGoTo={goTo} setShowEnv={setShowEnv}/>}
+
+    {screen==='conv'&&<ConvScreen profile={profile} people={people} places={places} initialPerson={convPerson} initialPlace={convPlace} onEnd={onConvEnd} onGoSettings={()=>goTo('settings')} ambientLevel={ambientLevel} setShowEnv={setShowEnv}/>}
+
+    {screen==='people'&&<ContactList items={people} type="person" onSelect={p=>startConv(p,null)} onEdit={item=>{setEditItem(item);setEditType('person');goTo('profileEdit');}} onDelete={id=>setConfirm({msg:'Delete this person?',confirmText:'Delete',danger:true,onConfirm:()=>{deletePerson(id);setConfirm(null);}})} onBack={goBack}/>}
+
+    {screen==='places'&&<ContactList items={places} type="place" onSelect={p=>startConv(null,p)} onEdit={item=>{setEditItem(item);setEditType('place');goTo('profileEdit');}} onDelete={id=>setConfirm({msg:'Delete this place?',confirmText:'Delete',danger:true,onConfirm:()=>{deletePlace(id);setConfirm(null);}})} onBack={goBack}/>}
+
+    {screen==='profileEdit'&&editItem&&<ProfileEditor item={editItem} type={editType} onSave={editType==='person'?savePersonEdit:savePlaceEdit} onBack={goBack}/>}
+
+    {screen==='settings'&&<SettingsScreen profile={profile} onSaveProfile={saveProfile} phrases={phrases} onSavePhrases={savePhrases} largeText={largeText} onToggleLarge={toggleLarge} qualityLog={qualityLog} sessions={sessions} onDeleteSession={id=>setConfirm({msg:'Delete this session? Cannot be undone.',confirmText:'Delete',danger:true,onConfirm:()=>{deleteSession(id);setConfirm(null);}})} onBack={goBack}/>}
+
+    {showEnv&&<EnvScreen level={ambientLevel} volume={ambientVolume} transcript={ambientTranscript} alerts={ambientAlerts} soundLevels={soundLevels} onClose={()=>setShowEnv(false)} onStartConv={text=>{setShowEnv(false);startConv();}}/>}
+
+    {confirm&&<ConfirmDialog {...confirm} onCancel={()=>setConfirm(null)}/>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
