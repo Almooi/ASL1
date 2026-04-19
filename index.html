@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VoiceBridge</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital,wght@0,400;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#090b10;--s1:#0f1118;--s2:#151820;--s3:#1b1f2c;
+  --b1:#1e2235;--b2:#272d42;--b3:#303753;
+  --text:#e8ecf8;--sub:#4a5270;--sub2:#7d879e;
+  --you:#4f8ef7;--you-d:#0a1830;--you-b:rgba(79,142,247,0.2);
+  --them:#2dd4a0;--them-d:#061510;--them-b:rgba(45,212,160,0.2);
+  --gold:#f5a623;--gold-d:#1a1000;--gold-b:rgba(245,166,35,0.2);
+  --red:#f26b6b;--red-d:#180808;--red-b:rgba(242,107,107,0.2);
+  --green:#4caf50;--amber:#f5a623;
+  --r:14px;--rsm:9px;--rxs:5px;
+  --fs:1rem;--fs-sm:0.82rem;--fs-xs:0.68rem;--fs-lg:1.15rem;
+}
+body.large-text{--fs:1.18rem;--fs-sm:0.96rem;--fs-xs:0.8rem;--fs-lg:1.35rem;}
+html,body{height:100%;font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;}
+#root{height:100%;}
+button{font-family:'Syne',sans-serif;cursor:pointer;}
+input,textarea,select{font-family:'Syne',sans-serif;}
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ═══════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════
+const S={
+  app:{height:'100vh',display:'flex',flexDirection:'column',background:'var(--bg)',maxWidth:520,margin:'0 auto',position:'relative',overflow:'hidden'},
+  // topbar
+  topbar:{display:'flex',alignItems:'center',gap:10,padding:'11px 15px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0,minHeight:52},
+  wordmark:{fontSize:'0.7rem',fontWeight:800,letterSpacing:'0.22em',textTransform:'uppercase',color:'var(--you)',display:'flex',alignItems:'center',gap:7},
+  // screen
+  screen:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'},
+  scrollArea:{flex:1,overflowY:'auto',padding:'16px 15px',display:'flex',flexDirection:'column',gap:10},
+  // buttons
+  ibtn:{background:'none',border:'1px solid var(--b1)',borderRadius:8,color:'var(--sub2)',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.95rem',transition:'all .2s',flexShrink:0},
+  badge:{width:30,height:30,borderRadius:'50%',background:'var(--you-d)',border:'1.5px solid var(--you-b)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.6rem',fontWeight:800,color:'var(--you)'},
+  pill:{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 11px',borderRadius:20,border:'1px solid var(--b1)',background:'var(--s2)',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s'},
+  // cards
+  card:{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px',cursor:'pointer',transition:'all .18s'},
+  // input
+  inputWrap:{flex:1,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--r)',display:'flex',alignItems:'flex-end',padding:'2px 6px 2px 12px',gap:4,transition:'border-color .2s'},
+  textarea:{flex:1,background:'none',border:'none',outline:'none',color:'var(--text)',fontSize:'var(--fs)',fontWeight:400,padding:'10px 0',resize:'none',maxHeight:90,lineHeight:1.4,fontFamily:"'Syne',sans-serif"},
+  sendBtn:{background:'var(--you)',border:'none',borderRadius:9,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.85rem',marginBottom:3,transition:'all .15s',color:'#fff'},
+  listenBtn:{background:'var(--them-d)',border:'1px solid var(--them-b)',borderRadius:'var(--r)',width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.05rem',transition:'all .2s'},
+};
+
+// ═══════════════════════════════════════════════
+// INDEXEDDB
+// ═══════════════════════════════════════════════
+const DB_NAME='voicebridge_v1',DB_VER=1;
+let db=null;
+async function initDB(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(DB_NAME,DB_VER);
+    req.onupgradeneeded=e=>{
+      const d=e.target.result;
+      ['people','places','sessions','insights','quality_log','recordings','settings'].forEach(store=>{
+        if(!d.objectStoreNames.contains(store))d.createObjectStore(store,{keyPath:'id'});
+      });
+    };
+    req.onsuccess=e=>{db=e.target.result;res(db);};
+    req.onerror=e=>rej(e);
+  });
+}
+async function dbGet(store,id){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readonly');
+    const req=tx.objectStore(store).get(id);
+    req.onsuccess=()=>res(req.result);
+    req.onerror=rej;
+  });
+}
+async function dbPut(store,obj){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readwrite');
+    const req=tx.objectStore(store).put(obj);
+    req.onsuccess=()=>res(req.result);
+    req.onerror=rej;
+  });
+}
+async function dbGetAll(store){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readonly');
+    const req=tx.objectStore(store).getAll();
+    req.onsuccess=()=>res(req.result||[]);
+    req.onerror=rej;
+  });
+}
+async function dbDelete(store,id){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readwrite');
+    const req=tx.objectStore(store).delete(id);
+    req.onsuccess=()=>res();
+    req.onerror=rej;
+  });
+}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+
+// ═══════════════════════════════════════════════
+// DEFAULTS
+// ═══════════════════════════════════════════════
+const DEFAULT_PHRASES=['Could you repeat that please?','Please speak more slowly.','I understand, thank you.','One moment please.','I am deaf — please read my screen.','Please write it down if possible.','Yes, that is correct.','No, not quite — let me clarify.'];
+const SCENARIOS=[
+  {id:'meet',icon:'👋',name:'Meeting Someone',desc:'Introductions, social situations, anyone new'},
+  {id:'shop',icon:'🛒',name:'Shop / Checkout',desc:'Buying, prices, availability'},
+  {id:'restaurant',icon:'🍽',name:'Restaurant / Café',desc:'Ordering, menu, allergies'},
+  {id:'transport',icon:'🚌',name:'Transport / Directions',desc:'Directions, tickets, transit'},
+  {id:'doctor',icon:'🏥',name:'Doctor / Pharmacy',desc:'Appointments, prescriptions, symptoms'},
+  {id:'work',icon:'💼',name:'Work / Office',desc:'Meetings, colleagues, professional'},
+  {id:'bank',icon:'🏦',name:'Bank / Post Office',desc:'Transactions, forms, queries'},
+  {id:'hotel',icon:'🏨',name:'Hotel / Accommodation',desc:'Check-in, requests, issues'},
+  {id:'emergency',icon:'🚨',name:'Emergency / Urgent',desc:'Urgent needs, help required'},
+];
+const SOUND_TYPES=[
+  {id:'voice',label:'Human voice',icon:'🗣',color:'var(--them)'},
+  {id:'music',label:'Music / TV',icon:'🎵',color:'var(--you)'},
+  {id:'traffic',label:'Traffic',icon:'🚗',color:'var(--sub2)'},
+  {id:'alarm',label:'Alarm / Siren',icon:'🚨',color:'var(--red)'},
+  {id:'child',label:'Child / Baby',icon:'👶',color:'var(--gold)'},
+  {id:'animal',label:'Animal',icon:'🐕',color:'var(--sub2)'},
+  {id:'doorbell',label:'Doorbell',icon:'🔔',color:'var(--gold)'},
+  {id:'phone',label:'Phone ringing',icon:'📞',color:'var(--you)'},
+];
+
+// ═══════════════════════════════════════════════
+// VOICE HELPERS
+// ═══════════════════════════════════════════════
+function pickVoice(){
+  const all=window.speechSynthesis?.getVoices()||[];
+  const maleFr=['thomas','nicolas','pierre','jean','henri','paul'];
+  for(const n of maleFr){const m=all.find(v=>v.lang.startsWith('fr')&&v.name.toLowerCase().includes(n));if(m)return m;}
+  const anyFr=all.find(v=>v.lang.startsWith('fr'));if(anyFr)return anyFr;
+  const deepEn=['daniel','james','arthur','oliver','gordon'];
+  for(const n of deepEn){const m=all.find(v=>v.name.toLowerCase().includes(n));if(m)return m;}
+  return all[0]||null;
+}
+function speakTTS(text){
+  return new Promise(res=>{
+    window.speechSynthesis.cancel();
+    const utt=new SpeechSynthesisUtterance(text);
+    const v=pickVoice();if(v)utt.voice=v;
+    utt.rate=0.91;utt.pitch=0.86;utt.volume=1;
+    utt.onend=res;utt.onerror=res;
+    window.speechSynthesis.speak(utt);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// SCORE BADGE
+// ═══════════════════════════════════════════════
+function ScoreBadge({score}){
+  const col=score>=80?'#4caf50':score>=50?'#f5a623':'#f26b6b';
+  const bg=score>=80?'#0a1a0a':score>=50?'#1a1200':'#1a0808';
+  return <sup style={{background:bg,color:col,padding:'1px 5px',borderRadius:4,fontSize:'0.58rem',fontWeight:700,marginLeft:4,verticalAlign:'super',lineHeight:1}}>{score}</sup>;
+}
+
+// ═══════════════════════════════════════════════
+// AMBIENT DOT
+// ═══════════════════════════════════════════════
+function AmbientDot({level,onClick}){
+  const colors={0:'#2a2d3a',1:'#c9a800',2:'#f5a623',3:'var(--you)',4:'var(--them)',5:'var(--red)'};
+  const col=colors[level]||colors[0];
+  const pulse=level>=3;
+  return(
+    <div onClick={onClick} style={{width:10,height:10,borderRadius:'50%',background:col,cursor:'pointer',flexShrink:0,boxShadow:level>=3?`0 0 8px ${col}`:'none',animation:pulse?'ambPulse 1.2s infinite alternate':'none'}} title="Tap for environment monitor"/>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════
+function App(){
+  const [ready,setReady]=useState(false);
+  const [screen,setScreen]=useState('home');
+  const [prevScreen,setPrevScreen]=useState('home');
+  const [profile,setProfile]=useState({firstName:'',surname:'',dob:'',ecName:'',ecPhone:'',medical:''});
+  const [phrases,setPhrases]=useState(DEFAULT_PHRASES);
+  const [people,setPeople]=useState([]);
+  const [places,setPlaces]=useState([]);
+  const [sessions,setSessions]=useState([]);
+  const [largeText,setLargeText]=useState(false);
+  const [currentSession,setCurrentSession]=useState(null);
+  const [selectedPerson,setSelectedPerson]=useState(null);
+  const [selectedPlace,setSelectedPlace]=useState(null);
+  const [messages,setMessages]=useState([]);
+  const [intersessions,setIntersessions]=useState([]);
+  const [isBusy,setIsBusy]=useState(false);
+  const [isListening,setIsListening]=useState(false);
+  const [isSpeaking,setIsSpeaking]=useState(false);
+  const [statusLabel,setStatusLabel]=useState('ready');
+  const [suggestions,setSuggestions]=useState([]);
+  const [showSuggestions,setShowSuggestions]=useState(false);
+  const [showPhrases,setShowPhrases]=useState(false);
+  const [isRecording,setIsRecording]=useState(true);
+  const [inputVal,setInputVal]=useState('');
+  const [predictions,setPredictions]=useState([]);
+  const [ambientLevel,setAmbientLevel]=useState(0);
+  const [ambientTranscript,setAmbientTranscript]=useState([]);
+  const [soundLevels,setSoundLevels]=useState({});
+  const [ambientVolume,setAmbientVolume]=useState(0);
+  const [nameDetected,setNameDetected]=useState(false);
+  const [showEnv,setShowEnv]=useState(false);
+  const [showSOS,setShowSOS]=useState(false);
+  const [showScreen_,setShowScreen_]=useState(false);
+  const [editingProfile,setEditingProfile]=useState(null);
+  const [confirmDialog,setConfirmDialog]=useState(null);
+  const [longPressMsg,setLongPressMsg]=useState(null);
+  const [editingMsg,setEditingMsg]=useState(null);
+  const [alertLog,setAlertLog]=useState([]);
+  const [gpsPlace,setGpsPlace]=useState(null);
+  const [recordingBlobs,setRecordingBlobs]=useState([]);
+  const [qualityLog,setQualityLog]=useState([]);
+
+  const recognitionRef=useRef(null);
+  const ambientRecRef=useRef(null);
+  const mediaRecRef=useRef(null);
+  const audioChunksRef=useRef([]);
+  const chatLogRef=useRef(null);
+  const inputRef=useRef(null);
+  const ambientAnalyserRef=useRef(null);
+  const ambientAnimRef=useRef(null);
+  const bufferRef=useRef([]);// rolling 8s buffer
+
+  // INIT
+  useEffect(()=>{
+    initDB().then(async()=>{
+      const p=await dbGet('settings','profile');
+      if(p)setProfile(p.data);
+      const ph=await dbGet('settings','phrases');
+      if(ph)setPhrases(ph.data);
+      const pp=await dbGetAll('people');setPeople(pp);
+      const pl=await dbGetAll('places');setPlaces(pl);
+      const ss=await dbGetAll('sessions');setSessions(ss);
+      const lt=await dbGet('settings','largeText');
+      if(lt)setLargeText(lt.data);
+      setReady(true);
+    });
+    if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=()=>{};
+  },[]);
+
+  useEffect(()=>{
+    document.body.classList.toggle('large-text',largeText);
+  },[largeText]);
+
+  // GPS
+  useEffect(()=>{
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        // match against saved places by rough proximity
+        // for now just store coords for display
+        setGpsPlace({lat:pos.coords.latitude,lng:pos.coords.longitude});
+      },()=>{});
+    }
+  },[]);
+
+  // AMBIENT AUDIO MONITORING
+  useEffect(()=>{
+    startAmbientMonitor();
+    return()=>stopAmbientMonitor();
+  },[profile.firstName]);
+
+  function startAmbientMonitor(){
+    if(!navigator.mediaDevices?.getUserMedia)return;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=256;
+      const src=ctx.createMediaStreamSource(stream);
+      src.connect(analyser);
+      ambientAnalyserRef.current={analyser,ctx,stream};
+
+      const data=new Uint8Array(analyser.frequencyBinCount);
+      let frameCount=0;
+
+      function tick(){
+        ambientAnimRef.current=requestAnimationFrame(tick);
+        analyser.getByteFrequencyData(data);
+        const avg=data.reduce((a,b)=>a+b,0)/data.length;
+        const vol=Math.round(avg/2.55);// 0-100
+        setAmbientVolume(vol);
+
+        // classify level
+        let lvl=0;
+        if(vol>5)lvl=1;
+        if(vol>20)lvl=2;
+        if(vol>40)lvl=3;
+        if(vol>60)lvl=4;
+
+        // crude voice frequency detection (300-3000hz)
+        const voiceBins=data.slice(3,30);
+        const voiceAvg=voiceBins.reduce((a,b)=>a+b,0)/voiceBins.length;
+        const isVoice=voiceAvg>30;
+        if(isVoice&&vol>25)lvl=Math.max(lvl,3);
+
+        setAmbientLevel(lvl);
+
+        // update sound levels display
+        frameCount++;
+        if(frameCount%15===0){
+          setSoundLevels({
+            voice:isVoice&&vol>25?Math.min(100,Math.round(voiceAvg*2)):'0',
+            music:vol>15&&!isVoice?Math.min(100,vol):'0',
+            traffic:'0',alarm:'0',child:'0',animal:'0',doorbell:'0',phone:'0'
+          });
+        }
+      }
+      tick();
+
+      // name detection via continuous speech recognition
+      startNameDetection();
+    }).catch(()=>{});
+  }
+
+  function stopAmbientMonitor(){
+    if(ambientAnimRef.current)cancelAnimationFrame(ambientAnimRef.current);
+    if(ambientAnalyserRef.current?.stream)ambientAnalyserRef.current.stream.getTracks().forEach(t=>t.stop());
+    if(ambientRecRef.current)try{ambientRecRef.current.stop();}catch(e){}
+  }
+
+  function startNameDetection(){
+    if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window))return;
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const rec=new SR();
+    rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
+    rec.onresult=e=>{
+      const t=Array.from(e.results).map(r=>r[0].transcript).join(' ').toLowerCase();
+      const fname=(profile.firstName||'').toLowerCase();
+      if(fname&&t.includes(fname)){
+        setNameDetected(true);
+        setAmbientLevel(5);
+        const entry={id:uid(),time:new Date().toLocaleTimeString(),text:`Your name "${profile.firstName}" was spoken`,type:'name'};
+        setAlertLog(p=>[entry,...p].slice(0,50));
+        addAmbientLine(`🔴 Name detected: "${profile.firstName}"`,99);
+        setTimeout(()=>setNameDetected(false),4000);
+      }
+      // add to ambient transcript
+      if(e.results[e.results.length-1].isFinal){
+        const final=e.results[e.results.length-1][0];
+        const conf=Math.round(final.confidence*100)||50;
+        addAmbientLine(final.transcript,conf);
+      }
+    };
+    rec.onerror=()=>{};
+    rec.onend=()=>{if(!isListening)setTimeout(startNameDetection,2000);};
+    ambientRecRef.current=rec;
+    try{rec.start();}catch(e){}
+  }
+
+  function addAmbientLine(text,conf){
+    const entry={id:uid(),time:new Date().toLocaleTimeString(),text,conf};
+    setAmbientTranscript(p=>[entry,...p].slice(0,100));
+    // buffer for rolling capture
+    bufferRef.current=[...bufferRef.current,entry].slice(-20);
+  }
+
+  // SAVE helpers
+  async function saveProfile(p){
+    setProfile(p);
+    await dbPut('settings',{id:'profile',data:p});
+  }
+  async function savePhrases(ph){
+    setPhrases(ph);
+    await dbPut('settings',{id:'phrases',data:ph});
+  }
+  async function savePeople(pp){
+    setPeople(pp);
+    for(const p of pp)await dbPut('people',p);
+  }
+  async function savePlaces(pl){
+    setPlaces(pl);
+    for(const p of pl)await dbPut('places',p);
+  }
+
+  // NAV
+  function goTo(s){setPrevScreen(screen);setScreen(s);}
+  function goBack(){setScreen(prevScreen||'home');}
+
+  // START CONVERSATION
+  function startConversation(person=null,place=null,scenario=null){
+    const sid=uid();
+    setCurrentSession({id:sid,startTime:Date.now(),scenario});
+    setSelectedPerson(person);
+    setSelectedPlace(place);
+    setMessages([]);
+    setIntersessions([]);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setInputVal('');
+    setIsRecording(true);
+    goTo('conv');
+  }
+
+  // SEND MESSAGE
+  async function sendMessage(text){
+    if(!text.trim()||isBusy)return;
+    setInputVal('');setPredictions([]);
+    setShowSuggestions(false);setShowPhrases(false);
+    setIsBusy(true);setIsSpeaking(true);
+    setStatusLabel('🔊 Speaking aloud…');
+    const msg={id:uid(),role:'you',text,time:Date.now()};
+    setMessages(p=>[...p,msg]);
+    scrollChat();
+    await speakTTS(text);
+    setIsSpeaking(false);
+    startListening();
+  }
+
+  // LISTENING
+  function startListening(){
+    if(!('webkitSpeechRecognition' in window||'SpeechRecognition' in window)){
+      setIsBusy(false);setStatusLabel('Speech recognition not supported. Use Chrome.');return;
+    }
+    // stop ambient name detection while actively listening
+    if(ambientRecRef.current)try{ambientRecRef.current.stop();}catch(e){}
+
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const rec=new SR();
+    rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
+    recognitionRef.current=rec;
+    let finalBuffer='';
+    let silenceTimer=null;
+    let lastConf=0;
+    const SILENCE_MS=2500;
+
+    setIsListening(true);
+    setStatusLabel('🎙 Listening…');
+    // add interim bubble
+    const interimId=uid();
+    setMessages(p=>[...p,{id:interimId,role:'them',text:'…',interim:true,conf:0}]);
+    scrollChat();
+
+    rec.onresult=e=>{
+      clearTimeout(silenceTimer);
+      let interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal){
+          finalBuffer+=e.results[i][0].transcript+' ';
+          lastConf=Math.round(e.results[i][0].confidence*100)||70;
+        } else interim+=e.results[i][0].transcript;
+      }
+      const display=finalBuffer+interim;
+      setMessages(p=>p.map(m=>m.id===interimId?{...m,text:display||'…',conf:lastConf}:m));
+      scrollChat();
+      // reset silence timer
+      silenceTimer=setTimeout(()=>finaliseListening(interimId,finalBuffer.trim()||display.trim(),lastConf,rec),SILENCE_MS);
+    };
+
+    rec.onerror=e=>{
+      if(e.error==='no-speech')return;
+      cleanupListening(rec);
+      setMessages(p=>p.filter(m=>m.id!==interimId));
+      addSystemMsg('Could not hear clearly. Tap 🎙 to try again.');
+      setIsBusy(false);setStatusLabel('ready');
+    };
+
+    rec.onend=()=>{
+      // restart if we haven't finalised yet
+      if(isListening&&finalBuffer.length<2){
+        try{rec.start();}catch(e){}
+      }
+    };
+
+    try{rec.start();}catch(e){setIsBusy(false);setStatusLabel('ready');}
+  }
+
+  function finaliseListening(interimId,text,conf,rec){
+    cleanupListening(rec);
+    if(!text){
+      setMessages(p=>p.filter(m=>m.id!==interimId));
+      setIsBusy(false);setStatusLabel('ready');
+      setTimeout(startNameDetection,500);
+      return;
+    }
+    setMessages(p=>p.map(m=>m.id===interimId?{...m,text,interim:false,conf:conf||70,isLatest:true}:({...m,isLatest:false})));
+    scrollChat();
+    getAISuggestions(text);
+    setTimeout(startNameDetection,500);
+  }
+
+  function cleanupListening(rec){
+    try{rec?.stop();}catch(e){}
+    recognitionRef.current=null;
+    setIsListening(false);
+    setStatusLabel('ready');
+  }
+
+  function toggleListen(){
+    if(isListening){
+      cleanupListening(recognitionRef.current);
+      setIsBusy(false);
+    } else {
+      setIsBusy(true);
+      startListening();
+    }
+  }
+
+  function sayAgain(msgId){
+    // stop current listening
+    cleanupListening(recognitionRef.current);
+    setIsBusy(true);
+    setIsListening(true);
+    setStatusLabel('🎙 Listening again…');
+
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    const rec=new SR();
+    rec.continuous=false;rec.interimResults=false;rec.lang='en-US';
+    recognitionRef.current=rec;
+    let silenceTimer=null;
+
+    rec.onresult=e=>{
+      clearTimeout(silenceTimer);
+      const newText=e.results[0][0].transcript;
+      const newConf=Math.round(e.results[0][0].confidence*100)||70;
+      // log retry to quality dump
+      setMessages(p=>{
+        const orig=p.find(m=>m.id===msgId);
+        if(orig){
+          const entry={id:uid(),timestamp:new Date().toISOString(),original:{text:orig.text,conf:orig.conf},replacement:{text:newText,conf:newConf},improvement:newConf-(orig.conf||0)};
+          setQualityLog(ql=>[...ql,entry]);
+          dbPut('quality_log',entry);
+        }
+        return p.map(m=>m.id===msgId?{...m,struckText:m.text,struckConf:m.conf,text:newText,conf:newConf,hasStruck:true}:m);
+      });
+      cleanupListening(rec);
+      setIsBusy(false);
+    };
+    rec.onerror=()=>{cleanupListening(rec);setIsBusy(false);};
+    try{rec.start();}catch(e){cleanupListening(rec);setIsBusy(false);}
+  }
+
+  // AI SUGGESTIONS
+  async function getAISuggestions(theirMsg){
+    setStatusLabel('✦ Thinking…');
+    const history=messages.slice(-8).map(m=>`${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+    const pCtx=[
+      profile.firstName&&`User: ${profile.firstName} ${profile.surname||''}`.trim(),
+      profile.medical&&`Medical: ${profile.medical}`,
+    ].filter(Boolean).join('. ');
+    const scName=currentSession?.scenario?.name||selectedPlace?.name||'General conversation';
+    const personCtx=selectedPerson?`Talking to: ${selectedPerson.name}. ${selectedPerson.communicationStyle||''} Key facts: ${(selectedPerson.keyFacts||[]).join(', ')}`:'';
+
+    const prompt=`You are a real-time communication assistant for a deaf/non-speaking person.
+${pCtx?`About user: ${pCtx}\n`:''}Scenario: ${scName}
+${personCtx?`${personCtx}\n`:''}
+Conversation:
+${history}
+
+The other person just said: "${theirMsg}"
+
+Generate exactly 3 short reply suggestions that DIRECTLY respond to "${theirMsg}".
+Rules: under 18 words each, natural, varied (agree/clarify/action), fit scenario.
+Return ONLY a raw JSON array of 3 strings. No markdown.`;
+
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:300,messages:[{role:'user',content:prompt}]})
+      });
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||'[]';
+      let sugs;
+      try{sugs=JSON.parse(raw.replace(/```json|```/g,'').trim());}
+      catch{sugs=fallbackSugs(theirMsg);}
+      setSuggestions(sugs.slice(0,3));
+      setShowSuggestions(true);
+    }catch{
+      setSuggestions(fallbackSugs(theirMsg));
+      setShowSuggestions(true);
+    }
+    setIsBusy(false);setStatusLabel('ready');
+  }
+
+  function fallbackSugs(last){
+    const l=last.toLowerCase();
+    if(l.includes('?'))return['Yes, that is correct.','No, let me explain.','Could you repeat that please?'];
+    if(l.includes('sorry'))return['No worries at all.','That is okay, thank you.','Please do not worry.'];
+    return['I understand, thank you.','Could you clarify that?','One moment please.'];
+  }
+
+  // POST SESSION EXTRACTION
+  async function extractSession(msgs){
+    if(!msgs.length)return;
+    const transcript=msgs.map(m=>`${m.role==='you'?'Me':'Them'}: ${m.text}`).join('\n');
+    const prompt=`Extract key insights from this conversation for the contact profile.
+Return JSON: {"keyFacts":[],"patterns":[],"topics":[],"decisions":[],"communicationStyle":""}
+Conversation:\n${transcript}
+Return ONLY raw JSON.`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:400,messages:[{role:'user',content:prompt}]})
+      });
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||'{}';
+      let insights;
+      try{insights=JSON.parse(raw.replace(/```json|```/g,'').trim());}
+      catch{return;}
+      // update person profile
+      if(selectedPerson){
+        const updated={...selectedPerson,
+          keyFacts:[...new Set([...(selectedPerson.keyFacts||[]),...(insights.keyFacts||[])].slice(0,20))],
+          detectedPatterns:[...new Set([...(selectedPerson.detectedPatterns||[]),...(insights.patterns||[])].slice(0,10))],
+          communicationStyle:insights.communicationStyle||selectedPerson.communicationStyle,
+          lastSeen:new Date().toISOString(),
+          conversationCount:(selectedPerson.conversationCount||0)+1,
+        };
+        const newPeople=people.map(p=>p.id===updated.id?updated:p);
+        await savePeople(newPeople);
+      }
+      // update place profile
+      if(selectedPlace){
+        const updated={...selectedPlace,
+          commonTopics:[...new Set([...(selectedPlace.commonTopics||[]),...(insights.topics||[])].slice(0,20))],
+          lastVisited:new Date().toISOString(),
+          visitCount:(selectedPlace.visitCount||0)+1,
+        };
+        const newPlaces=places.map(p=>p.id===updated.id?updated:p);
+        await savePlaces(newPlaces);
+      }
+    }catch{}
+  }
+
+  // END SESSION
+  async function endSession(msgs=messages){
+    if(msgs.length>0){
+      await extractSession(msgs);
+      // archive session
+      const archived={id:currentSession?.id||uid(),personId:selectedPerson?.id,placeId:selectedPlace?.id,messages:msgs,timestamp:new Date().toISOString(),scenario:currentSession?.scenario?.name};
+      await dbPut('sessions',archived);
+      setSessions(p=>[archived,...p]);
+    }
+    setMessages([]);setSuggestions([]);setShowSuggestions(false);
+    setSelectedPerson(null);setSelectedPlace(null);setCurrentSession(null);
+    setIntersessions([]);setIsRecording(true);setIsBusy(false);
+    cleanupListening(recognitionRef.current);
+  }
+
+  // SPLIT INTERSESSION
+  async function splitIntersession(){
+    const seg={id:uid(),personId:selectedPerson?.id,messages:[...messages],timestamp:new Date().toISOString()};
+    await extractSession(messages);
+    setIntersessions(p=>[...p,seg]);
+    setMessages([...messages,{id:uid(),role:'system',text:'─── New person · '+(selectedPlace?.name||'same place')+' ───'}]);
+    setSelectedPerson(null);setSuggestions([]);setShowSuggestions(false);
+    setStatusLabel('ready');setIsBusy(false);
+    cleanupListening(recognitionRef.current);
+  }
+
+  // NEW CHAT
+  function confirmNewChat(){
+    setConfirmDialog({msg:'End this session and start fresh?',confirmText:'Yes, new chat',onConfirm:async()=>{
+      await endSession();setConfirmDialog(null);
+    }});
+  }
+
+  // DELETE SESSION
+  function deleteSession(sessionId){
+    setConfirmDialog({msg:'Delete this entire session? This cannot be undone.',confirmText:'Delete',danger:true,onConfirm:async()=>{
+      await dbDelete('sessions',sessionId);
+      setSessions(p=>p.filter(s=>s.id!==sessionId));
+      setConfirmDialog(null);
+    }});
+  }
+
+  // MSG ACTIONS
+  function deleteMsg(id){
+    setMessages(p=>p.filter(m=>m.id!==id));
+    setLongPressMsg(null);
+  }
+  function flagMsg(id){
+    setMessages(p=>p.map(m=>m.id===id?{...m,flagged:!m.flagged}:m));
+    setLongPressMsg(null);
+  }
+  function replayMsg(text){
+    speakTTS(text);setLongPressMsg(null);
+  }
+
+  // WORD PREDICTION
+  const WORDS=['I','the','a','is','are','was','have','can','could','would','will','please','thank','sorry','need','want','help','yes','no','okay','hello','understand','know','here','today','now','more','also','just','and','or','not','do','say','tell','ask','give','take','make','think','feel','like'];
+  function updatePreds(val){
+    const words=val.split(/\s+/);
+    const last=words[words.length-1].toLowerCase();
+    if(!last||val.endsWith(' ')){setPredictions([]);return;}
+    const m=WORDS.filter(w=>w.toLowerCase().startsWith(last)&&w.toLowerCase()!==last).slice(0,4);
+    setPredictions(m);
+  }
+
+  function addPred(w){
+    const parts=inputVal.split(/\s+/);
+    parts[parts.length-1]=w;
+    const nv=parts.join(' ')+' ';
+    setInputVal(nv);setPredictions([]);
+    inputRef.current?.focus();
+  }
+
+  function scrollChat(){setTimeout(()=>{if(chatLogRef.current)chatLogRef.current.scrollTo({top:chatLogRef.current.scrollHeight,behavior:'smooth'});},60);}
+  function addSystemMsg(text){setMessages(p=>[...p,{id:uid(),role:'system',text}]);}
+
+  // CREATE PERSON/PLACE
+  function createPerson(name){
+    const p={id:uid(),name,relationship:'',communicationStyle:'',keyFacts:[],detectedPatterns:[],linkedPlaces:[],conversationCount:0,lastSeen:new Date().toISOString(),recordingPreference:'on',flaggedMoments:[],notes:''};
+    const np=[...people,p];savePeople(np);return p;
+  }
+  function createPlace(name){
+    const p={id:uid(),name,type:'',linkedPeople:[],commonTopics:[],visitCount:0,lastVisited:new Date().toISOString(),notes:''};
+    const np=[...places,p];savePlaces(np);return p;
+  }
+
+  // EXPORT
+  function exportConv(){
+    const lines=messages.map(m=>`[${m.role.toUpperCase()}] ${m.text}`).join('\n');
+    const header=`VoiceBridge Export\nDate: ${new Date().toLocaleDateString()}\nPerson: ${selectedPerson?.name||'Unknown'}\nPlace: ${selectedPlace?.name||'Unknown'}\n${'─'.repeat(40)}\n`;
+    try{navigator.clipboard.writeText(header+lines);addSystemMsg('✓ Copied to clipboard.');}
+    catch{alert(header+lines);}
+  }
+
+  // RECENT CONTACTS
+  const recentPeople=useMemo(()=>[...people].sort((a,b)=>new Date(b.lastSeen||0)-new Date(a.lastSeen||0)).slice(0,4),[people]);
+  const recentPlaces=useMemo(()=>[...places].sort((a,b)=>new Date(b.lastVisited||0)-new Date(a.lastVisited||0)).slice(0,4),[places]);
+
+  if(!ready)return <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--bg)',color:'var(--sub2)',fontSize:'0.8rem',letterSpacing:'0.1em'}}>LOADING…</div>;
+
+  return(
+    <div style={{...S.app,fontSize:'var(--fs)'}}>
+      <style>{`
+        @keyframes ambPulse{from{opacity:1;}to{opacity:.3;}}
+        @keyframes msgIn{to{opacity:1;transform:translateY(0);}}
+        @keyframes spin{to{transform:rotate(360deg);}}
+        @keyframes blink{from{opacity:1;}to{opacity:.2;}}
+        .ibtn:hover{border-color:var(--text)!important;color:var(--text)!important;}
+        .card:hover{border-color:var(--you)!important;background:var(--s2)!important;transform:translateX(3px)!important;}
+        .sug-btn:hover{background:var(--s3)!important;border-color:var(--you)!important;transform:translateX(3px)!important;}
+        .ph-chip:hover{border-color:var(--you)!important;color:var(--you)!important;}
+        .sc-card:hover{border-color:var(--you)!important;background:var(--s2)!important;}
+      `}</style>
+
+      {/* ── HOME SCREEN ── */}
+      {screen==='home'&&<HomeScreen {...{profile,recentPeople,recentPlaces,people,places,ambientLevel,nameDetected,startConversation,goTo,createPerson,createPlace,setSelectedPerson,setSelectedPlace,setShowEnv,savePeople,savePlaces}}/>}
+
+      {/* ── CONVERSATION SCREEN ── */}
+      {screen==='conv'&&<ConvScreen {...{profile,messages,setMessages,suggestions,showSuggestions,setShowSuggestions,showPhrases,setShowPhrases,phrases,isBusy,isListening,isSpeaking,statusLabel,selectedPerson,setSelectedPerson,selectedPlace,setSelectedPlace,people,places,gpsPlace,isRecording,setIsRecording,inputVal,setInputVal,predictions,setPredictions,ambientLevel,nameDetected,chatLogRef,inputRef,longPressMsg,setLongPressMsg,editingMsg,setEditingMsg,sendMessage,toggleListen,sayAgain,splitIntersession,confirmNewChat,endSession,exportConv,goTo,goBack,addPred,updatePreds,setShowEnv,setShowSOS,setShowScreen_,deleteMsg,flagMsg,replayMsg,createPerson,createPlace,setSuggestions,scrollChat}}/>}
+
+      {/* ── PEOPLE SCREEN ── */}
+      {screen==='people'&&<PeopleScreen {...{people,setPeople,savePeople,goTo,goBack,startConversation,editingProfile,setEditingProfile}}/>}
+
+      {/* ── PLACES SCREEN ── */}
+      {screen==='places'&&<PlacesScreen {...{places,setPlaces,savePlaces,goTo,goBack,startConversation,editingProfile,setEditingProfile}}/>}
+
+      {/* ── PROFILE EDIT SCREEN ── */}
+      {screen==='profileEdit'&&<ProfileEditScreen {...{editingProfile,setEditingProfile,people,places,savePeople,savePlaces,goBack}}/>}
+
+      {/* ── SETTINGS SCREEN ── */}
+      {screen==='settings'&&<SettingsScreen {...{profile,saveProfile,phrases,savePhrases,largeText,setLargeText,qualityLog,sessions,deleteSession,goBack,dbPut}}/>}
+
+      {/* ── ENVIRONMENT PAGE ── */}
+      {showEnv&&<EnvScreen {...{ambientLevel,ambientVolume,ambientTranscript,soundLevels,alertLog,nameDetected,profile,onClose:()=>setShowEnv(false),onStartConv:(text)=>{setShowEnv(false);if(screen!=='conv')startConversation();setTimeout(()=>addSystemMsg('From environment: '+text),300);}}}/>}
+
+      {/* ── SOS OVERLAY ── */}
+      {showSOS&&<SOSOverlay profile={profile} onClose={()=>setShowSOS(false)}/>}
+
+      {/* ── SHOW SCREEN OVERLAY ── */}
+      {showScreen_&&<ShowScreenOverlay profile={profile} onClose={()=>setShowScreen_(false)}/>}
+
+      {/* ── CONFIRM DIALOG ── */}
+      {confirmDialog&&<ConfirmDialog {...confirmDialog} onCancel={()=>setConfirmDialog(null)}/>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// HOME SCREEN
+// ═══════════════════════════════════════════════
+function HomeScreen({profile,recentPeople,recentPlaces,people,places,ambientLevel,nameDetected,startConversation,goTo,createPerson,createPlace,setShowEnv}){
+  const [tab,setTab]=useState('people');
+  const badge=(profile.firstName?(profile.firstName[0]+(profile.surname?.[0]||'')).toUpperCase():'?');
+
+  return(
+    <div style={S.screen}>
+      <div style={S.topbar}>
+        <div style={{...S.wordmark}}>
+          <span style={{width:7,height:7,borderRadius:'50%',background:'var(--you)',boxShadow:'0 0 10px var(--you)',display:'inline-block'}}/>
+          VoiceBridge
+        </div>
+        <div style={{flex:1}}/>
+        <AmbientDot level={ambientLevel} onClick={()=>setShowEnv(true)}/>
+        <div style={{...S.badge,marginLeft:6}}>{badge}</div>
+        <button style={S.ibtn} onClick={()=>goTo('settings')}>⚙️</button>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'18px 15px 30px',display:'flex',flexDirection:'column',gap:14}}>
+        {/* Quick Start */}
+        <button onClick={()=>startConversation()} style={{background:'linear-gradient(135deg,var(--you-d),#0a2040)',border:'1.5px solid var(--you-b)',borderRadius:'var(--r)',padding:'20px 18px',cursor:'pointer',display:'flex',alignItems:'center',gap:14,transition:'all .2s',textAlign:'left'}}>
+          <span style={{fontSize:'1.8rem'}}>💬</span>
+          <div>
+            <div style={{fontSize:'var(--fs-lg)',fontWeight:700,color:'var(--you)',marginBottom:3}}>Quick Start</div>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>Tap to begin conversation instantly</div>
+          </div>
+          <span style={{marginLeft:'auto',color:'var(--you)',fontSize:'1.2rem'}}>›</span>
+        </button>
+
+        {/* Recent */}
+        {(recentPeople.length>0||recentPlaces.length>0)&&(
+          <div>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10}}>Recent</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {recentPeople.slice(0,2).map(p=>(
+                <button key={p.id} className="card" onClick={()=>startConversation(p)} style={{...S.card,display:'flex',alignItems:'center',gap:9,textAlign:'left',cursor:'pointer'}}>
+                  <span style={{fontSize:'1.3rem'}}>👤</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:'var(--fs-sm)',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                    <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.conversationCount||0} chats</div>
+                  </div>
+                </button>
+              ))}
+              {recentPlaces.slice(0,2).map(p=>(
+                <button key={p.id} className="card" onClick={()=>startConversation(null,p)} style={{...S.card,display:'flex',alignItems:'center',gap:9,textAlign:'left',cursor:'pointer'}}>
+                  <span style={{fontSize:'1.3rem'}}>📍</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:'var(--fs-sm)',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                    <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.visitCount||0} visits</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* People / Places tabs */}
+        <div>
+          <div style={{display:'flex',gap:8,marginBottom:12}}>
+            {['people','places'].map(t=>(
+              <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:'8px',background:tab===t?'var(--you-d)':'var(--s1)',border:`1px solid ${tab===t?'var(--you-b)':'var(--b1)'}`,borderRadius:'var(--rsm)',color:tab===t?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+                {t==='people'?`👥 People (${people.length})`:`📍 Places (${places.length})`}
+              </button>
+            ))}
+          </div>
+
+          <button onClick={()=>goTo(tab)} style={{width:'100%',background:'transparent',border:'1px dashed var(--b2)',borderRadius:'var(--r)',padding:'11px',color:'var(--sub2)',fontSize:'var(--fs-sm)',cursor:'pointer',marginBottom:8,transition:'all .15s'}}>
+            {tab==='people'?'👥 All People →':'📍 All Places →'}
+          </button>
+
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {(tab==='people'?people:places).slice(0,5).map(item=>(
+              <button key={item.id} className="card" onClick={()=>tab==='people'?startConversation(item):startConversation(null,item)} style={{...S.card,display:'flex',alignItems:'center',gap:11,textAlign:'left',cursor:'pointer'}}>
+                <span style={{fontSize:'1.2rem'}}>{tab==='people'?'👤':'📍'}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'var(--fs-sm)',fontWeight:700}}>{item.name}</div>
+                  <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tab==='people'?(item.communicationStyle||item.relationship||'No details yet'):(item.type||item.notes||'No details yet')}</div>
+                </div>
+                <span style={{color:'var(--sub)',fontSize:'0.9rem'}}>›</span>
+              </button>
+            ))}
+            {(tab==='people'?people:places).length===0&&(
+              <div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:'20px',border:'1px dashed var(--b1)',borderRadius:'var(--r)'}}>
+                No {tab} yet. They are created automatically during conversations.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// CONVERSATION SCREEN
+// ═══════════════════════════════════════════════
+function ConvScreen({profile,messages,setMessages,suggestions,showSuggestions,setShowSuggestions,showPhrases,setShowPhrases,phrases,isBusy,isListening,isSpeaking,statusLabel,selectedPerson,setSelectedPerson,selectedPlace,setSelectedPlace,people,places,gpsPlace,isRecording,setIsRecording,inputVal,setInputVal,predictions,setPredictions,ambientLevel,nameDetected,chatLogRef,inputRef,longPressMsg,setLongPressMsg,editingMsg,setEditingMsg,sendMessage,toggleListen,sayAgain,splitIntersession,confirmNewChat,endSession,exportConv,goTo,goBack,addPred,updatePreds,setShowEnv,setShowSOS,setShowScreen_,deleteMsg,flagMsg,replayMsg,createPerson,createPlace,setSuggestions,scrollChat}){
+  const [personDropdown,setPersonDropdown]=useState(false);
+  const [placeDropdown,setPlaceDropdown]=useState(false);
+  const [personSearch,setPersonSearch]=useState('');
+  const [placeSearch,setPlaceSearch]=useState('');
+  const [newPersonName,setNewPersonName]=useState('');
+  const [newPlaceName,setNewPlaceName]=useState('');
+
+  const latestThemIdx=useMemo(()=>{
+    let last=-1;
+    messages.forEach((m,i)=>{if(m.role==='them'&&!m.interim)last=i;});
+    return last;
+  },[messages]);
+
+  const pipColor=isSpeaking?'var(--you)':isListening?'var(--them)':statusLabel.includes('✦')?'var(--gold)':'var(--sub)';
+
+  function handleInput(e){
+    setInputVal(e.target.value);
+    e.target.style.height='auto';
+    e.target.style.height=Math.min(e.target.scrollHeight,90)+'px';
+    updatePreds(e.target.value);
+  }
+
+  function handleKeyDown(e){
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage(inputVal);}
+  }
+
+  function selectPerson(p){setSelectedPerson(p);setPersonDropdown(false);}
+  function selectPlace(p){setSelectedPlace(p);setPlaceDropdown(false);}
+
+  function addNewPerson(){
+    if(!newPersonName.trim())return;
+    const p=createPerson(newPersonName.trim());
+    selectPerson(p);setNewPersonName('');
+  }
+  function addNewPlace(){
+    if(!newPlaceName.trim())return;
+    const p=createPlace(newPlaceName.trim());
+    selectPlace(p);setNewPlaceName('');
+  }
+
+  const filtPeople=people.filter(p=>p.name.toLowerCase().includes(personSearch.toLowerCase()));
+  const filtPlaces=places.filter(p=>p.name.toLowerCase().includes(placeSearch.toLowerCase()));
+
+  return(
+    <div style={S.screen}>
+      {/* Topbar */}
+      <div style={{...S.topbar,paddingLeft:12,paddingRight:12}}>
+        <button style={S.ibtn} onClick={()=>{endSession();goBack();}}>←</button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:'var(--fs-sm)',fontWeight:700,display:'flex',alignItems:'center',gap:7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {selectedPerson?.name||selectedPlace?.name||'Conversation'}
+          </div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',display:'flex',alignItems:'center',gap:5,marginTop:1}}>
+            <div style={{width:5,height:5,borderRadius:'50%',background:pipColor,animation:(isSpeaking||isListening)?'blink .6s infinite alternate':'none'}}/>
+            {statusLabel}
+          </div>
+        </div>
+        <AmbientDot level={ambientLevel} onClick={()=>setShowEnv(true)}/>
+        <button style={S.ibtn} onClick={()=>setShowEnv(true)} title="Environment">🌐</button>
+        <button style={S.ibtn} onClick={()=>setShowScreen_(true)} title="Show Screen">🃏</button>
+        <button style={{...S.ibtn,borderColor:'var(--red-b)',color:'var(--red)'}} onClick={()=>setShowSOS(true)} title="SOS">🆘</button>
+      </div>
+
+      {/* Context bar */}
+      <div style={{display:'flex',alignItems:'center',gap:7,padding:'7px 12px',borderBottom:'1px solid var(--b1)',background:'var(--s1)',flexShrink:0,flexWrap:'wrap'}}>
+        {/* Place chip */}
+        <div style={{position:'relative'}}>
+          <button onClick={()=>{setPlaceDropdown(!placeDropdown);setPersonDropdown(false);}} style={{...S.pill,color:selectedPlace?'var(--text)':'var(--sub2)',borderColor:selectedPlace?'var(--b2)':'var(--b1)'}}>
+            📍 {selectedPlace?.name||'Place'} ▾
+          </button>
+          {placeDropdown&&(
+            <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:8,zIndex:50,minWidth:200,maxHeight:220,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}}>
+              <input value={placeSearch} onChange={e=>setPlaceSearch(e.target.value)} placeholder="Search places…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:6,padding:'6px 9px',color:'var(--text)',fontSize:'var(--fs-xs)',marginBottom:6,outline:'none'}}/>
+              {filtPlaces.map(p=><button key={p.id} onClick={()=>selectPlace(p)} style={{width:'100%',textAlign:'left',background:'none',border:'none',padding:'7px 8px',color:'var(--text)',fontSize:'var(--fs-xs)',cursor:'pointer',borderRadius:6,display:'block'}}>{p.name}</button>)}
+              <div style={{display:'flex',gap:5,marginTop:6}}>
+                <input value={newPlaceName} onChange={e=>setNewPlaceName(e.target.value)} placeholder="New place name…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none'}} onKeyDown={e=>e.key==='Enter'&&addNewPlace()}/>
+                <button onClick={addNewPlace} style={{background:'var(--you)',border:'none',borderRadius:6,padding:'5px 9px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+              </div>
+              <button onClick={()=>{setSelectedPlace(null);setPlaceDropdown(false);}} style={{width:'100%',background:'none',border:'none',padding:'6px 8px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',marginTop:4,textAlign:'left'}}>✕ Clear</button>
+            </div>
+          )}
+        </div>
+
+        {/* Person chip */}
+        <div style={{position:'relative'}}>
+          <button onClick={()=>{setPersonDropdown(!personDropdown);setPlaceDropdown(false);}} style={{...S.pill,color:selectedPerson?'var(--text)':'var(--sub2)',borderColor:selectedPerson?'var(--b2)':'var(--b1)'}}>
+            👤 {selectedPerson?.name||'Person'} ▾
+          </button>
+          {personDropdown&&(
+            <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:8,zIndex:50,minWidth:200,maxHeight:220,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}}>
+              <input value={personSearch} onChange={e=>setPersonSearch(e.target.value)} placeholder="Search people…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:6,padding:'6px 9px',color:'var(--text)',fontSize:'var(--fs-xs)',marginBottom:6,outline:'none'}}/>
+              {filtPeople.map(p=><button key={p.id} onClick={()=>selectPerson(p)} style={{width:'100%',textAlign:'left',background:'none',border:'none',padding:'7px 8px',color:'var(--text)',fontSize:'var(--fs-xs)',cursor:'pointer',borderRadius:6,display:'block'}}>{p.name}</button>)}
+              <div style={{display:'flex',gap:5,marginTop:6}}>
+                <input value={newPersonName} onChange={e=>setNewPersonName(e.target.value)} placeholder="New person name…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 8px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none'}} onKeyDown={e=>e.key==='Enter'&&addNewPerson()}/>
+                <button onClick={addNewPerson} style={{background:'var(--you)',border:'none',borderRadius:6,padding:'5px 9px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+              </div>
+              <button onClick={()=>{setSelectedPerson(null);setPersonDropdown(false);}} style={{width:'100%',background:'none',border:'none',padding:'6px 8px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',marginTop:4,textAlign:'left'}}>✕ Clear</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{flex:1}}/>
+
+        {/* Recording toggle */}
+        <button onClick={()=>setIsRecording(!isRecording)} style={{...S.pill,borderColor:isRecording?'var(--red-b)':'var(--b1)',color:isRecording?'var(--red)':'var(--sub)'}} title={isRecording?'Recording on':'Recording off'}>
+          {isRecording?'🔴':'⚫'}
+        </button>
+
+        {/* Split */}
+        <button onClick={splitIntersession} style={{...S.pill}} title="Split — new person, same place">✂️</button>
+
+        {/* New chat */}
+        <button onClick={confirmNewChat} style={{...S.pill}} title="New chat">🔄</button>
+
+        {/* More */}
+        <button onClick={exportConv} style={{...S.pill}} title="Export">📋</button>
+      </div>
+
+      {/* Chat log */}
+      <div ref={chatLogRef} style={{flex:1,overflowY:'auto',padding:'14px 13px',display:'flex',flexDirection:'column',gap:10}}>
+        {messages.length===0&&(
+          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:8,color:'var(--sub)',padding:40,textAlign:'center'}}>
+            <div style={{fontSize:'2.2rem',opacity:.3}}>💬</div>
+            <div style={{fontSize:'var(--fs-sm)',lineHeight:1.7}}>Type a message or tap 🎙<br/>It will be spoken aloud.</div>
+          </div>
+        )}
+
+        {messages.map((msg,idx)=>(
+          <MessageBubble key={msg.id} msg={msg} isLatestThem={idx===latestThemIdx} onLongPress={()=>setLongPressMsg(msg.id)} onSayAgain={()=>sayAgain(msg.id)} showActions={longPressMsg===msg.id} onDelete={()=>deleteMsg(msg.id)} onFlag={()=>flagMsg(msg.id)} onReplay={()=>replayMsg(msg.text)} onEdit={()=>{setEditingMsg(msg.id);setLongPressMsg(null);}} editingId={editingMsg} setEditingMsg={setEditingMsg} setMessages={setMessages}/>
+        ))}
+      </div>
+
+      {/* Bottom zone */}
+      <div style={{flexShrink:0,background:'var(--s1)',borderTop:'1px solid var(--b1)'}}>
+        {/* Suggestions */}
+        {showSuggestions&&suggestions.length>0&&(
+          <div style={{padding:'9px 12px 0'}}>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:6,display:'flex',alignItems:'center',gap:5}}>
+              <span style={{fontSize:'0.5rem'}}>✦</span> Suggested replies
+            </div>
+            {suggestions.map((s,i)=>(
+              <button key={i} className="sug-btn" onClick={()=>{setShowSuggestions(false);sendMessage(s);}} style={{width:'100%',background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',textAlign:'left',cursor:'pointer',display:'flex',alignItems:'center',gap:8,marginBottom:5,transition:'all .12s',lineHeight:1.4}}>
+                {s}<span style={{marginLeft:'auto',color:'var(--sub)',fontSize:'var(--fs-xs)',flexShrink:0}}>›</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Phrase bank */}
+        {showPhrases&&(
+          <div style={{padding:'9px 12px 0',maxHeight:140,overflowY:'auto',borderTop:'1px solid var(--b1)'}}>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Quick Phrases</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+              {phrases.map((p,i)=>(
+                <button key={i} className="ph-chip" onClick={()=>{setShowPhrases(false);sendMessage(p);}} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',color:'var(--sub2)',fontSize:'var(--fs-xs)',padding:'6px 10px',cursor:'pointer',transition:'all .12s'}}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Word predictions */}
+        {predictions.length>0&&(
+          <div style={{display:'flex',gap:5,padding:'7px 12px 0',overflowX:'auto'}}>
+            {predictions.map((w,i)=>(
+              <button key={i} onClick={()=>addPred(w)} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',color:'var(--sub2)',fontSize:'var(--fs-xs)',padding:'5px 10px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,transition:'all .12s'}}>
+                {w}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Input row */}
+        <div style={{padding:'8px 12px 16px',display:'flex',gap:8,alignItems:'flex-end'}}>
+          <button onClick={()=>{setShowPhrases(!showPhrases);setShowSuggestions(false);}} style={{...S.pill,height:44,padding:'0 12px',flexShrink:0,borderColor:showPhrases?'var(--you-b)':'var(--b1)',color:showPhrases?'var(--you)':'var(--sub2)'}}>⚡</button>
+          <div style={{...S.inputWrap}}>
+            <textarea ref={inputRef} value={inputVal} onChange={handleInput} onKeyDown={handleKeyDown} placeholder="Type your message…" rows={1} style={S.textarea}/>
+            <button disabled={isBusy||!inputVal.trim()} onClick={()=>sendMessage(inputVal)} style={{...S.sendBtn,opacity:isBusy||!inputVal.trim()?0.4:1}}>▶</button>
+          </div>
+          <button disabled={isSpeaking} onClick={toggleListen} style={{...S.listenBtn,borderColor:isListening?'var(--them)':'var(--them-b)',background:isListening?'rgba(45,212,160,.2)':'var(--them-d)',animation:isListening?'ring 1.2s infinite':'none'}}>
+            🎙
+          </button>
+        </div>
+      </div>
+
+      <style>{`@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(45,212,160,.35);}50%{box-shadow:0 0 0 8px rgba(45,212,160,0);}}`}</style>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// MESSAGE BUBBLE
+// ═══════════════════════════════════════════════
+function MessageBubble({msg,isLatestThem,onLongPress,onSayAgain,showActions,onDelete,onFlag,onReplay,onEdit,editingId,setEditingMsg,setMessages}){
+  const [editVal,setEditVal]=useState(msg.text);
+  const longPressTimer=useRef(null);
+
+  function handleTouchStart(){longPressTimer.current=setTimeout(onLongPress,500);}
+  function handleTouchEnd(){clearTimeout(longPressTimer.current);}
+
+  function saveEdit(){
+    setMessages(p=>p.map(m=>m.id===msg.id?{...m,text:editVal}:m));
+    setEditingMsg(null);
+  }
+
+  if(msg.role==='system'){
+    return <div style={{alignSelf:'center',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:20,padding:'5px 13px',fontSize:'var(--fs-xs)',color:'var(--sub2)',fontFamily:"'JetBrains Mono',monospace",textAlign:'center',maxWidth:'100%'}}>{msg.text}</div>;
+  }
+
+  const isYou=msg.role==='you';
+  const bubbleStyle={
+    padding:'11px 14px',
+    borderRadius:'var(--r)',
+    fontSize:'var(--fs)',
+    lineHeight:1.55,
+    wordBreak:'break-word',
+    position:'relative',
+    ...(isYou?{background:'var(--you-d)',border:'1px solid var(--you-b)',borderBottomRightRadius:4,color:'#c0d8ff'}:{background:'var(--them-d)',border:'1px solid var(--them-b)',borderBottomLeftRadius:4,color:'#9ff0d4'}),
+    ...(msg.interim?{opacity:.6}:{}),
+  };
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',maxWidth:'88%',alignSelf:isYou?'flex-end':'flex-start',alignItems:isYou?'flex-end':'flex-start',animation:'msgIn .2s ease forwards',opacity:0,transform:'translateY(6px)'}}>
+      <div style={{fontSize:'var(--fs-xs)',letterSpacing:'0.1em',textTransform:'uppercase',color:isYou?'var(--you)':'var(--them)',marginBottom:3,padding:'0 3px'}}>
+        {isYou?'🔊 You (spoken aloud)':'👤 Them (heard)'}
+        {msg.flagged&&<span style={{marginLeft:6,color:'var(--gold)'}}>⚑</span>}
+      </div>
+
+      {/* Struck through original if say-again was used */}
+      {msg.hasStruck&&(
+        <div style={{...bubbleStyle,textDecoration:'line-through',opacity:.35,marginBottom:4}}>
+          {msg.struckText}<ScoreBadge score={msg.struckConf||0}/>
+        </div>
+      )}
+
+      {editingId===msg.id?(
+        <div style={{width:'100%'}}>
+          <textarea value={editVal} onChange={e=>setEditVal(e.target.value)} style={{width:'100%',background:'var(--s2)',border:'1px solid var(--you-b)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs)',resize:'none',outline:'none',fontFamily:"'Syne',sans-serif",lineHeight:1.4}}/>
+          <div style={{display:'flex',gap:6,marginTop:5}}>
+            <button onClick={saveEdit} style={{background:'var(--you)',border:'none',borderRadius:'var(--rxs)',padding:'6px 14px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Save</button>
+            <button onClick={()=>setEditingMsg(null)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:'var(--rxs)',padding:'6px 14px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Cancel</button>
+          </div>
+        </div>
+      ):(
+        <div style={bubbleStyle} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onMouseDown={handleTouchStart} onMouseUp={handleTouchEnd} onMouseLeave={handleTouchEnd}>
+          {msg.text}
+          {!isYou&&!msg.interim&&msg.conf>0&&<ScoreBadge score={msg.conf}/>}
+        </div>
+      )}
+
+      {/* Say again — only on latest them message */}
+      {!isYou&&isLatestThem&&!msg.interim&&(
+        <button onClick={onSayAgain} style={{marginTop:4,background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'4px 10px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',display:'flex',alignItems:'center',gap:5,transition:'all .15s'}}>
+          ↺ Say again
+        </button>
+      )}
+
+      {/* Long press actions */}
+      {showActions&&(
+        <div style={{display:'flex',gap:5,marginTop:5,flexWrap:'wrap'}}>
+          {[['🔊','Replay',onReplay],['✏️','Edit',onEdit],['🗑','Delete',onDelete],[msg.flagged?'⚑ Unflag':'⚑ Flag','Flag',onFlag]].map(([ico,lbl,fn])=>(
+            <button key={lbl} onClick={fn} style={{background:'var(--s2)',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 9px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',transition:'all .12s'}}>
+              {ico}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// ENVIRONMENT SCREEN
+// ═══════════════════════════════════════════════
+function EnvScreen({ambientLevel,ambientVolume,ambientTranscript,soundLevels,alertLog,nameDetected,profile,onClose,onStartConv}){
+  const levelLabels=['Silent','Sound detected','Noise present','Voice detected','Directed at you','⚠ Name detected'];
+  const levelColors=['var(--sub)','#c9a800','var(--gold)','var(--you)','var(--them)','var(--red)'];
+
+  // Simple radar dots
+  const radarDots=useMemo(()=>{
+    const dots=[];
+    if(ambientLevel>=2){
+      for(let i=0;i<Math.min(ambientLevel+1,6);i++){
+        const angle=(i/6)*Math.PI*2;
+        const dist=30+Math.random()*40;
+        dots.push({x:80+Math.cos(angle)*dist,y:80+Math.sin(angle)*dist,col:levelColors[ambientLevel]||'var(--sub2)',size:4+ambientLevel});
+      }
+    }
+    return dots;
+  },[ambientLevel]);
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:100,display:'flex',flexDirection:'column',maxWidth:520,margin:'0 auto'}}>
+      <div style={S.topbar}>
+        <button style={S.ibtn} onClick={onClose}>←</button>
+        <span style={{fontWeight:700,fontSize:'var(--fs-sm)'}}>Environment Monitor</span>
+        <div style={{flex:1}}/>
+        <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'var(--fs-xs)',color:levelColors[ambientLevel]}}>
+          <div style={{width:8,height:8,borderRadius:'50%',background:levelColors[ambientLevel],boxShadow:`0 0 8px ${levelColors[ambientLevel]}`,animation:ambientLevel>=3?'ambPulse 1.2s infinite alternate':'none'}}/>
+          Live
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'14px 15px',display:'flex',flexDirection:'column',gap:14}}>
+        {/* Status */}
+        <div style={{background:'var(--s1)',border:`1px solid ${levelColors[ambientLevel]}44`,borderRadius:'var(--r)',padding:'14px 16px',textAlign:'center'}}>
+          <div style={{fontSize:'1.8rem',marginBottom:6}}>{['🔇','👂','🔉','🗣','📢','🔴'][ambientLevel]||'👂'}</div>
+          <div style={{fontSize:'var(--fs-lg)',fontWeight:700,color:levelColors[ambientLevel]}}>{levelLabels[ambientLevel]||'Monitoring…'}</div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginTop:3}}>Volume: {ambientVolume}dB · Confidence: {Math.min(100,ambientLevel*20)}%</div>
+        </div>
+
+        {/* Radar */}
+        <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px',display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',alignSelf:'flex-start'}}>Direction Radar</div>
+          <svg width={160} height={160} style={{overflow:'visible'}}>
+            <circle cx={80} cy={80} r={70} fill="none" stroke="var(--b1)" strokeWidth={1}/>
+            <circle cx={80} cy={80} r={45} fill="none" stroke="var(--b1)" strokeWidth={1} strokeDasharray="4,4"/>
+            <circle cx={80} cy={80} r={20} fill="none" stroke="var(--b1)" strokeWidth={1}/>
+            <circle cx={80} cy={80} r={8} fill="var(--you)" opacity={0.8}/>
+            {radarDots.map((d,i)=><circle key={i} cx={d.x} cy={d.y} r={d.size} fill={d.col} opacity={0.7}/>)}
+            {ambientLevel>=3&&<circle cx={80} cy={80} r={70} fill="none" stroke={levelColors[ambientLevel]} strokeWidth={1.5} opacity={0.3} style={{animation:'ambPulse 1.5s infinite alternate'}}/>}
+          </svg>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>● You  · Other dots = sound sources</div>
+        </div>
+
+        {/* Sound levels */}
+        <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px'}}>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Sound Classification</div>
+          {SOUND_TYPES.map(st=>{
+            const val=parseInt(soundLevels[st.id])||0;
+            const label=val>60?'HIGH':val>20?'MED':val>0?'LOW':'NONE';
+            const dot=val>60?'var(--red)':val>20?'var(--gold)':val>0?'var(--them)':'var(--b2)';
+            return(
+              <div key={st.id} style={{display:'flex',alignItems:'center',gap:10,padding:'5px 0',borderBottom:'1px solid var(--b1)'}}>
+                <span style={{fontSize:'1rem',width:20}}>{st.icon}</span>
+                <span style={{flex:1,fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{st.label}</span>
+                <div style={{width:60,height:4,background:'var(--b1)',borderRadius:2,overflow:'hidden'}}>
+                  <div style={{width:`${val}%`,height:'100%',background:dot,borderRadius:2,transition:'width .3s'}}/>
+                </div>
+                <span style={{fontSize:'var(--fs-xs)',color:dot,width:30,textAlign:'right'}}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Volume bar */}
+        <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase'}}>Ambient Volume</span>
+            <span style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{ambientVolume}/100</span>
+          </div>
+          <div style={{height:8,background:'var(--b1)',borderRadius:4,overflow:'hidden'}}>
+            <div style={{width:`${ambientVolume}%`,height:'100%',background:`linear-gradient(90deg,var(--them),var(--gold),var(--red))`,borderRadius:4,transition:'width .1s'}}/>
+          </div>
+        </div>
+
+        {/* Live transcript */}
+        <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px'}}>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Live Transcript</div>
+          <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:160,overflowY:'auto'}}>
+            {ambientTranscript.length===0&&<div style={{color:'var(--sub)',fontSize:'var(--fs-xs)'}}>Listening for speech…</div>}
+            {ambientTranscript.map(e=>(
+              <div key={e.id} onClick={()=>onStartConv(e.text)} style={{display:'flex',gap:8,alignItems:'flex-start',cursor:'pointer',padding:'4px 6px',borderRadius:6,transition:'background .15s'}}>
+                <span style={{fontSize:'var(--fs-xs)',color:'var(--sub)',flexShrink:0,marginTop:1}}>{e.time}</span>
+                <span style={{fontSize:'var(--fs-sm)',color:'var(--sub2)',flex:1,lineHeight:1.4}}>{e.text}</span>
+                {e.conf>0&&<ScoreBadge score={e.conf}/>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Alert log */}
+        {alertLog.length>0&&(
+          <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px'}}>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:10}}>Recent Alerts</div>
+            {alertLog.slice(0,10).map(a=>(
+              <div key={a.id} style={{display:'flex',gap:8,padding:'5px 0',borderBottom:'1px solid var(--b1)',fontSize:'var(--fs-xs)'}}>
+                <span style={{color:'var(--sub)',flexShrink:0}}>{a.time}</span>
+                <span style={{color:'var(--sub2)'}}>{a.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// PEOPLE SCREEN
+// ═══════════════════════════════════════════════
+function PeopleScreen({people,savePeople,goTo,goBack,startConversation,editingProfile,setEditingProfile}){
+  const [search,setSearch]=useState('');
+  const filtered=people.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+
+  function deletePerson(id){
+    savePeople(people.filter(p=>p.id!==id));
+  }
+
+  return(
+    <div style={S.screen}>
+      <div style={S.topbar}>
+        <button style={S.ibtn} onClick={goBack}>←</button>
+        <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>👥 People ({people.length})</span>
+      </div>
+      <div style={{padding:'12px 15px',borderBottom:'1px solid var(--b1)',flexShrink:0}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search people…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none'}}/>
+      </div>
+      <div style={{...S.scrollArea}}>
+        {filtered.map(p=>(
+          <div key={p.id} style={{...S.card,display:'flex',alignItems:'center',gap:11}}>
+            <span style={{fontSize:'1.3rem'}}>👤</span>
+            <div style={{flex:1,minWidth:0}} onClick={()=>{setEditingProfile(p);goTo('profileEdit');}}>
+              <div style={{fontSize:'var(--fs-sm)',fontWeight:700}}>{p.name}</div>
+              <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.conversationCount||0} conversations · {p.lastSeen?new Date(p.lastSeen).toLocaleDateString():'Never'}</div>
+              {p.keyFacts?.length>0&&<div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.keyFacts[0]}</div>}
+            </div>
+            <button onClick={()=>startConversation(p)} style={{background:'var(--you-d)',border:'1px solid var(--you-b)',borderRadius:8,padding:'6px 10px',color:'var(--you)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Chat</button>
+            <button onClick={()=>deletePerson(p.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:8,padding:'6px 8px',color:'var(--sub)',fontSize:'0.8rem',cursor:'pointer'}}>✕</button>
+          </div>
+        ))}
+        {filtered.length===0&&<div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:30}}>No people found. They are created automatically during conversations.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// PLACES SCREEN
+// ═══════════════════════════════════════════════
+function PlacesScreen({places,savePlaces,goTo,goBack,startConversation,editingProfile,setEditingProfile}){
+  const [search,setSearch]=useState('');
+  const filtered=places.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+
+  return(
+    <div style={S.screen}>
+      <div style={S.topbar}>
+        <button style={S.ibtn} onClick={goBack}>←</button>
+        <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>📍 Places ({places.length})</span>
+      </div>
+      <div style={{padding:'12px 15px',borderBottom:'1px solid var(--b1)',flexShrink:0}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search places…" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none'}}/>
+      </div>
+      <div style={S.scrollArea}>
+        {filtered.map(p=>(
+          <div key={p.id} style={{...S.card,display:'flex',alignItems:'center',gap:11}}>
+            <span style={{fontSize:'1.3rem'}}>📍</span>
+            <div style={{flex:1,minWidth:0}} onClick={()=>{setEditingProfile(p);goTo('profileEdit');}}>
+              <div style={{fontSize:'var(--fs-sm)',fontWeight:700}}>{p.name}</div>
+              <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{p.visitCount||0} visits · {p.lastVisited?new Date(p.lastVisited).toLocaleDateString():'Never'}</div>
+              {p.commonTopics?.length>0&&<div style={{fontSize:'var(--fs-xs)',color:'var(--sub)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.commonTopics[0]}</div>}
+            </div>
+            <button onClick={()=>startConversation(null,p)} style={{background:'var(--them-d)',border:'1px solid var(--them-b)',borderRadius:8,padding:'6px 10px',color:'var(--them)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>Visit</button>
+            <button onClick={()=>savePlaces(places.filter(pl=>pl.id!==p.id))} style={{background:'none',border:'1px solid var(--b1)',borderRadius:8,padding:'6px 8px',color:'var(--sub)',fontSize:'0.8rem',cursor:'pointer'}}>✕</button>
+          </div>
+        ))}
+        {filtered.length===0&&<div style={{textAlign:'center',color:'var(--sub)',fontSize:'var(--fs-xs)',padding:30}}>No places yet. They are created automatically during conversations.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// PROFILE EDIT SCREEN
+// ═══════════════════════════════════════════════
+function ProfileEditScreen({editingProfile,setEditingProfile,people,places,savePeople,savePlaces,goBack}){
+  const [form,setForm]=useState(editingProfile||{});
+  const [newFact,setNewFact]=useState('');
+  const isPerson=!form.visitCount&&form.conversationCount!==undefined||form.relationship!==undefined;
+
+  function save(){
+    if(isPerson){savePeople(people.map(p=>p.id===form.id?form:p));}
+    else{savePlaces(places.map(p=>p.id===form.id?form:p));}
+    setEditingProfile(form);
+    goBack();
+  }
+
+  function addFact(){
+    if(!newFact.trim())return;
+    setForm(f=>({...f,keyFacts:[...(f.keyFacts||[]),newFact.trim()]}));
+    setNewFact('');
+  }
+
+  function removeFact(i){setForm(f=>({...f,keyFacts:f.keyFacts.filter((_,idx)=>idx!==i)}));}
+
+  const Field=({label,field,placeholder,multi})=>(
+    <div style={{marginBottom:12}}>
+      <label style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',display:'block',marginBottom:5,letterSpacing:'0.04em'}}>{label}</label>
+      {multi?(
+        <textarea value={form[field]||''} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={placeholder} rows={3} style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',resize:'none',lineHeight:1.5,fontFamily:"'Syne',sans-serif"}}/>
+      ):(
+        <input value={form[field]||''} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={placeholder} style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+      )}
+    </div>
+  );
+
+  return(
+    <div style={S.screen}>
+      <div style={S.topbar}>
+        <button style={S.ibtn} onClick={goBack}>←</button>
+        <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>{isPerson?'👤':'📍'} {form.name||'Profile'}</span>
+        <button onClick={save} style={{background:'var(--you)',border:'none',borderRadius:8,padding:'7px 14px',color:'#fff',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer',letterSpacing:'0.06em',textTransform:'uppercase'}}>Save</button>
+      </div>
+      <div style={S.scrollArea}>
+        <Field label="Name" field="name" placeholder="Name…"/>
+        {isPerson&&<Field label="Relationship" field="relationship" placeholder="e.g. colleague, friend, doctor…"/>}
+        {!isPerson&&<Field label="Type" field="type" placeholder="e.g. pharmacy, café, office…"/>}
+        <Field label="Communication Style" field="communicationStyle" placeholder="e.g. formal, friendly, brief…"/>
+        <Field label="Notes" field="notes" placeholder="Anything to remember…" multi/>
+
+        {/* Key facts */}
+        <div>
+          <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:8,letterSpacing:'0.04em'}}>Key Facts</div>
+          {(form.keyFacts||[]).map((f,i)=>(
+            <div key={i} style={{display:'flex',gap:7,marginBottom:5,alignItems:'center',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px'}}>
+              <span style={{flex:1,fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{f}</span>
+              <button onClick={()=>removeFact(i)} style={{background:'none',border:'none',color:'var(--sub)',cursor:'pointer',fontSize:'0.8rem'}}>✕</button>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:6,marginTop:5}}>
+            <input value={newFact} onChange={e=>setNewFact(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addFact()} placeholder="Add a fact…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+            <button onClick={addFact} style={{background:'var(--you)',border:'none',borderRadius:'var(--rsm)',padding:'7px 12px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+          </div>
+        </div>
+
+        {/* Detected patterns */}
+        {(form.detectedPatterns||[]).length>0&&(
+          <div>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:8,letterSpacing:'0.04em'}}>Detected Patterns</div>
+            {form.detectedPatterns.map((p,i)=>(
+              <div key={i} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'7px 10px',fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:4}}>{p}</div>
+            ))}
+          </div>
+        )}
+
+        <div style={{height:20}}/>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// SETTINGS SCREEN
+// ═══════════════════════════════════════════════
+function SettingsScreen({profile,saveProfile,phrases,savePhrases,largeText,setLargeText,qualityLog,sessions,deleteSession,goBack,dbPut}){
+  const [form,setForm]=useState(profile);
+  const [phraseList,setPhraseList]=useState([...phrases]);
+  const [newPhrase,setNewPhrase]=useState('');
+  const [tab,setTab]=useState('profile');
+  const [saved,setSaved]=useState(false);
+
+  async function save(){
+    await saveProfile(form);
+    await savePhrases(phraseList);
+    await dbPut('settings',{id:'largeText',data:largeText});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
+  }
+
+  function addPhrase(){if(!newPhrase.trim())return;setPhraseList(p=>[...p,newPhrase.trim()]);setNewPhrase('');}
+  function removePhrase(i){setPhraseList(p=>p.filter((_,idx)=>idx!==i));}
+  function updatePhrase(i,v){setPhraseList(p=>p.map((ph,idx)=>idx===i?v:ph));}
+
+  function exportQualityLog(){
+    const json=JSON.stringify(qualityLog,null,2);
+    try{navigator.clipboard.writeText(json);alert('Quality log copied to clipboard.');}
+    catch{alert(json);}
+  }
+
+  const Field=({label,field,placeholder,type='text',multi})=>(
+    <div style={{marginBottom:12}}>
+      <label style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',display:'block',marginBottom:5}}>{label}</label>
+      {multi?(
+        <textarea value={form[field]||''} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={placeholder} rows={3} style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',resize:'none',fontFamily:"'Syne',sans-serif"}}/>
+      ):(
+        <input type={type} value={form[field]||''} onChange={e=>setForm(f=>({...f,[field]:e.target.value}))} placeholder={placeholder} style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+      )}
+    </div>
+  );
+
+  return(
+    <div style={S.screen}>
+      <div style={S.topbar}>
+        <button style={S.ibtn} onClick={goBack}>←</button>
+        <span style={{fontWeight:700,fontSize:'var(--fs-sm)',flex:1}}>⚙️ Settings</span>
+        <button onClick={save} style={{background:saved?'var(--them)':'var(--you)',border:'none',borderRadius:8,padding:'7px 14px',color:'#fff',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer',letterSpacing:'0.06em',textTransform:'uppercase',transition:'background .3s'}}>
+          {saved?'✓ Saved':'Save'}
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:6,padding:'10px 14px',borderBottom:'1px solid var(--b1)',flexShrink:0,overflowX:'auto'}}>
+        {['profile','phrases','display','data'].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{padding:'6px 12px',background:tab===t?'var(--you-d)':'none',border:`1px solid ${tab===t?'var(--you-b)':'var(--b1)'}`,borderRadius:'var(--rsm)',color:tab===t?'var(--you)':'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',whiteSpace:'nowrap',textTransform:'capitalize'}}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div style={S.scrollArea}>
+        {tab==='profile'&&(
+          <>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:4}}>Personal</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+              <div>
+                <label style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',display:'block',marginBottom:5}}>First Name</label>
+                <input value={form.firstName||''} onChange={e=>setForm(f=>({...f,firstName:e.target.value}))} placeholder="Marie" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',display:'block',marginBottom:5}}>Surname</label>
+                <input value={form.surname||''} onChange={e=>setForm(f=>({...f,surname:e.target.value}))} placeholder="Dubois" style={{width:'100%',background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'9px 12px',color:'var(--text)',fontSize:'var(--fs-sm)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+              </div>
+            </div>
+            <Field label="Date of Birth" field="dob" type="date"/>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:4,marginTop:8}}>Emergency Contact</div>
+            <Field label="Contact Name" field="ecName" placeholder="Jean Dubois"/>
+            <Field label="Contact Phone" field="ecPhone" placeholder="+33 6 12 34 56 78" type="tel"/>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:4,marginTop:8}}>Medical Notes</div>
+            <Field label="Shown in SOS mode" field="medical" placeholder="e.g. Profoundly deaf. Allergic to penicillin." multi/>
+          </>
+        )}
+
+        {tab==='phrases'&&(
+          <>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10}}>Quick Phrase Bank</div>
+            {phraseList.map((p,i)=>(
+              <div key={i} style={{display:'flex',gap:7,marginBottom:6,alignItems:'center'}}>
+                <input value={p} onChange={e=>updatePhrase(i,e.target.value)} style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'8px 11px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+                <button onClick={()=>removePhrase(i)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'7px 9px',color:'var(--sub)',cursor:'pointer',fontSize:'0.85rem'}}>✕</button>
+              </div>
+            ))}
+            <div style={{display:'flex',gap:6,marginTop:6}}>
+              <input value={newPhrase} onChange={e=>setNewPhrase(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addPhrase()} placeholder="Add new phrase…" style={{flex:1,background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--rsm)',padding:'8px 11px',color:'var(--text)',fontSize:'var(--fs-xs)',outline:'none',fontFamily:"'Syne',sans-serif"}}/>
+              <button onClick={addPhrase} style={{background:'var(--you)',border:'none',borderRadius:'var(--rsm)',padding:'8px 14px',color:'#fff',fontSize:'var(--fs-xs)',cursor:'pointer'}}>+</button>
+            </div>
+          </>
+        )}
+
+        {tab==='display'&&(
+          <>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10}}>Accessibility</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px',marginBottom:10}}>
+              <div>
+                <div style={{fontSize:'var(--fs-sm)',fontWeight:600}}>Large Text</div>
+                <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginTop:2}}>Increases all font sizes</div>
+              </div>
+              <button onClick={()=>setLargeText(!largeText)} style={{width:48,height:26,borderRadius:13,background:largeText?'var(--you)':'var(--b2)',border:'none',cursor:'pointer',position:'relative',transition:'background .2s'}}>
+                <div style={{width:20,height:20,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:largeText?25:3,transition:'left .2s'}}/>
+              </button>
+            </div>
+          </>
+        )}
+
+        {tab==='data'&&(
+          <>
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10}}>Quality Log</div>
+            <div style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'14px 15px',marginBottom:10}}>
+              <div style={{fontSize:'var(--fs-sm)',marginBottom:4}}>{qualityLog.length} retry events logged</div>
+              <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)',marginBottom:10}}>Every "Say Again" event is stored here for analysis and app improvement.</div>
+              <button onClick={exportQualityLog} style={{background:'var(--s2)',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'8px 14px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer'}}>📋 Export as JSON</button>
+            </div>
+
+            <div style={{fontSize:'var(--fs-xs)',color:'var(--gold)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:10,marginTop:8}}>Session History</div>
+            {sessions.slice(0,10).map(s=>(
+              <div key={s.id} style={{background:'var(--s1)',border:'1px solid var(--b1)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:6,display:'flex',alignItems:'center',gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'var(--fs-xs)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.scenario||'Conversation'}</div>
+                  <div style={{fontSize:'var(--fs-xs)',color:'var(--sub2)'}}>{new Date(s.timestamp).toLocaleDateString()} · {s.messages?.length||0} messages</div>
+                </div>
+                <button onClick={()=>deleteSession(s.id)} style={{background:'none',border:'1px solid var(--b1)',borderRadius:6,padding:'5px 8px',color:'var(--sub)',cursor:'pointer',fontSize:'0.8rem'}}>🗑</button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// SOS OVERLAY
+// ═══════════════════════════════════════════════
+function SOSOverlay({profile,onClose}){
+  const rows=[
+    profile.firstName&&{k:'Name',v:`${profile.firstName} ${profile.surname||''}`.trim()},
+    profile.dob&&{k:'Date of Birth',v:profile.dob},
+    profile.ecName&&{k:'Emergency Contact',v:profile.ecName},
+    profile.ecPhone&&{k:'Phone',v:profile.ecPhone},
+    profile.medical&&{k:'Medical Notes',v:profile.medical},
+  ].filter(Boolean);
+
+  if(!rows.length)rows.push({k:'Note',v:'No profile saved. Go to ⚙️ Settings to add your details.'});
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'#0f0000',zIndex:300,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,gap:18,textAlign:'center',maxWidth:520,margin:'0 auto'}}>
+      <div style={{fontSize:'clamp(3rem,12vw,5rem)',fontWeight:800,color:'var(--red)',animation:'ambPulse 1.2s infinite alternate',letterSpacing:'0.05em',lineHeight:1}}>⚠ SOS</div>
+      <div style={{background:'#1a0000',border:'2px solid rgba(242,107,107,.3)',borderRadius:'var(--r)',padding:'18px 22px',width:'100%',textAlign:'left'}}>
+        {rows.map((r,i)=>(
+          <div key={i} style={{display:'flex',gap:12,padding:'7px 0',borderBottom:i<rows.length-1?'1px solid rgba(242,107,107,.1)':'none',fontSize:'clamp(0.85rem,4vw,1rem)'}}>
+            <div style={{color:'var(--sub2)',minWidth:110,fontSize:'clamp(0.72rem,3vw,0.82rem)',textTransform:'uppercase',letterSpacing:'0.06em',marginTop:2}}>{r.k}</div>
+            <div style={{color:'var(--text)',fontWeight:600,flex:1}}>{r.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:'clamp(0.78rem,3.5vw,0.9rem)',color:'var(--sub2)',maxWidth:380,lineHeight:1.6}}>Show this screen to emergency services or a bystander.</div>
+      <button onClick={onClose} style={{background:'var(--red-d)',border:'1px solid rgba(242,107,107,.3)',borderRadius:'var(--r)',padding:'13px 30px',color:'var(--red)',fontFamily:"'Syne',sans-serif",fontSize:'var(--fs-sm)',fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'}}>← Close SOS</button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// SHOW SCREEN OVERLAY
+// ═══════════════════════════════════════════════
+function ShowScreenOverlay({profile,onClose}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'#fff',zIndex:250,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:28,gap:18,textAlign:'center',maxWidth:520,margin:'0 auto'}}>
+      <div style={{fontFamily:"'Instrument Serif',serif",fontSize:'clamp(1.8rem,8vw,3rem)',color:'#111',lineHeight:1.3,fontWeight:400}}>Please read<br/>my screen.</div>
+      <div style={{fontSize:'clamp(0.9rem,4vw,1.1rem)',color:'#444',maxWidth:360,lineHeight:1.7}}>I am deaf or non-speaking. I communicate using this app. Please speak clearly — I will show you my reply.</div>
+      {profile.firstName&&(
+        <div style={{background:'#f5f5f5',border:'1px solid #ddd',borderRadius:12,padding:'14px 20px',textAlign:'left',width:'100%',maxWidth:380,lineHeight:1.9,fontSize:'clamp(0.85rem,3.5vw,1rem)',color:'#333'}}>
+          <strong>Name:</strong> {profile.firstName} {profile.surname||''}<br/>
+          {profile.dob&&<><strong>DOB:</strong> {profile.dob}<br/></>}
+          {profile.medical&&<><strong>Notes:</strong> {profile.medical}</>}
+        </div>
+      )}
+      <button onClick={onClose} style={{background:'#111',border:'none',borderRadius:12,padding:'13px 28px',color:'#fff',fontFamily:"'Syne',sans-serif",fontSize:'var(--fs-sm)',fontWeight:700,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer',marginTop:8}}>← Back to conversation</button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// CONFIRM DIALOG
+// ═══════════════════════════════════════════════
+function ConfirmDialog({msg,confirmText,danger,onConfirm,onCancel}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'var(--s1)',border:'1px solid var(--b2)',borderRadius:'var(--r)',padding:'22px 20px',maxWidth:320,width:'100%'}}>
+        <div style={{fontSize:'var(--fs-sm)',lineHeight:1.6,color:'var(--text)',marginBottom:18}}>{msg}</div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={onCancel} style={{flex:1,background:'none',border:'1px solid var(--b2)',borderRadius:'var(--rsm)',padding:'10px',color:'var(--sub2)',fontSize:'var(--fs-xs)',cursor:'pointer',fontFamily:"'Syne',sans-serif"}}>Cancel</button>
+          <button onClick={onConfirm} style={{flex:1,background:danger?'var(--red-d)':'var(--you)',border:`1px solid ${danger?'var(--red-b)':'var(--you-b)'}`,borderRadius:'var(--rsm)',padding:'10px',color:danger?'var(--red)':'#fff',fontSize:'var(--fs-xs)',fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif"}}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
