@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HEAR-CRAFT</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:      #5aad27;
+      --green-dark: #3c7a1a;
+      --green-dim:  #1e3d0e;
+      --yellow:     #f5de19;
+      --yellow-dim: #7a6a00;
+      --bg:         #111a0e;
+      --panel:      rgba(0,0,0,0.65);
+      --border-hi:  #777;
+      --border-lo:  #222;
+      --text:       #e8f0e0;
+      --muted:      #6a7a62;
+      --red:        #c03030;
+      --blue:       #5588cc;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'Press Start 2P', monospace;
+      min-height: 100vh;
+      padding: 12px 12px 40px;
+    }
+
+    /* grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        repeating-linear-gradient(0deg,  transparent, transparent 31px, rgba(255,255,255,0.025) 32px),
+        repeating-linear-gradient(90deg, transparent, transparent 31px, rgba(255,255,255,0.025) 32px);
+    }
+
+    .wrap { max-width: 580px; margin: 0 auto; position: relative; z-index: 1; }
+
+    /* ── header ── */
+    .header { text-align: center; padding: 10px 0 12px; }
+    .logo {
+      font-size: 15px; color: var(--yellow);
+      text-shadow: 3px 3px 0 var(--yellow-dim);
+      letter-spacing: 2px; margin-bottom: 5px;
+    }
+    .tagline { font-family: 'VT323', monospace; font-size: 18px; color: var(--muted); }
+
+    /* ── pixel panel ── */
+    .panel {
+      background: var(--panel);
+      border: 3px solid var(--border-hi);
+      border-bottom-color: var(--border-lo);
+      border-right-color:  var(--border-lo);
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .panel-label {
+      font-size: 7px; color: var(--muted);
+      margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── live dot ── */
+    .dot {
+      width: 8px; height: 8px; flex-shrink: 0;
+      background: var(--red); display: inline-block;
+      animation: blink 1s step-end infinite;
+    }
+    .dot.on { background: var(--green); }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── sound bar ── */
+    .sound-bar {
+      display: flex; align-items: flex-end; justify-content: center;
+      gap: 3px; height: 26px; margin: 6px 0 10px;
+    }
+    .sb { width: 9px; min-height: 4px; background: var(--green-dim); border: 2px solid var(--green); transition: height .08s; }
+    .sb.on { background: var(--green); border-color: #9fff60; }
+
+    /* ── transcript live ── */
+    .live-text {
+      font-family: 'VT323', monospace; font-size: 26px;
+      color: var(--text); min-height: 60px; line-height: 1.4; word-break: break-word;
+    }
+    .dim    { color: #333; font-size: 19px; }
+    .ghost  { color: #7abb6a; opacity: .65; }
+
+    /* ── tabs ── */
+    .tabs { display: flex; gap: 0; margin-bottom: 8px; }
+    .tab {
+      font-family: 'Press Start 2P', monospace; font-size: 7px;
+      padding: 8px 6px; cursor: pointer; flex: 1; text-align: center;
+      color: var(--muted); background: rgba(0,0,0,.4);
+      border: 2px solid #333;
+    }
+    .tab.on { color: var(--yellow); border-color: var(--yellow); background: rgba(245,222,25,.06); }
+
+    /* ── conversation log ── */
+    .log { max-height: 190px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+    .msg { padding: 6px 0; border-bottom: 1px solid #1e2a18; }
+    .msg:last-child { border-bottom: none; }
+    .msg-inner { display: flex; gap: 7px; align-items: flex-start; }
+    .who {
+      font-size: 6px; padding: 3px 5px; flex-shrink: 0; margin-top: 5px;
+      border: 1px solid;
+    }
+    .who.them { color: #88bbff; border-color: #223355; }
+    .who.me   { color: #88ffaa; border-color: #1a3a22; }
+    .words {
+      font-family: 'VT323', monospace; font-size: 20px;
+      color: #aabba0; line-height: 1.6;
+      display: flex; flex-wrap: wrap; gap: 2px; align-items: baseline;
+    }
+    .w {
+      cursor: pointer; padding: 1px 4px; border-radius: 2px;
+      transition: background .1s, color .1s;
+    }
+    .w:hover { background: var(--yellow); color: #111; }
+
+    /* ── small buttons ── */
+    .smbtn {
+      font-family: 'Press Start 2P', monospace; font-size: 6px;
+      padding: 3px 7px; cursor: pointer;
+      color: var(--yellow); background: #3a2c00;
+      border: none;
+      border-top: 2px solid #888; border-left: 2px solid #888;
+      border-bottom: 2px solid #1a1a1a; border-right: 2px solid #1a1a1a;
+      margin-top: 4px;
+    }
+    .smbtn:hover { background: #5a4400; }
+    .smbtn:disabled { opacity: .35; cursor: default; }
+
+    /* ── explain box ── */
+    .explain {
+      margin-top: 6px; border-left: 3px solid var(--yellow);
+      padding: 7px 9px; background: rgba(0,0,0,.5);
+      font-family: 'VT323', monospace; font-size: 16px;
+      color: var(--text); line-height: 1.5; display: none;
+    }
+    .explain.on { display: block; }
+    .eq { color: var(--yellow); font-size: 12px; margin-bottom: 2px; }
+    .ea { color: #88ffaa; font-size: 15px; }
+    .ew { color: #ffcc66; font-size: 12px; margin-top: 4px; }
+    .er { color: #88ccff; font-size: 12px; margin-top: 3px; }
+
+    /* ── suggested replies ── */
+    .replies-wrap { display: flex; flex-direction: column; gap: 6px; }
+    .reply-chip {
+      font-family: 'VT323', monospace; font-size: 19px;
+      color: #88ffaa; background: rgba(0,60,0,.35);
+      border: 2px solid #1e4a1e;
+      border-top-color: #2e6a2e; border-left-color: #2e6a2e;
+      padding: 8px 10px; cursor: pointer; text-align: left; line-height: 1.4;
+      width: 100%;
+    }
+    .reply-chip:hover { background: rgba(0,100,0,.45); border-color: var(--green); }
+    .reply-chip .rlabel { font-size: 13px; color: var(--yellow); display: block; margin-bottom: 2px; }
+    .reply-chip .rfull  { font-size: 18px; color: #88ffaa; }
+    .reply-chip.loading { cursor: default; color: #2a3a2a; }
+    .no-replies { font-family: 'VT323', monospace; font-size: 16px; color: #2a3a2a; padding: 4px 0; }
+
+    /* ── spin ── */
+    .spin {
+      width: 8px; height: 8px; border: 2px solid #333;
+      border-top-color: var(--yellow); border-radius: 50%;
+      animation: spin .6s linear infinite; display: none;
+    }
+    .spin.on { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── type area ── */
+    .textarea {
+      font-family: 'VT323', monospace; font-size: 20px;
+      background: rgba(0,0,0,.6); color: var(--text);
+      border: 2px solid #333; border-top-color: #111; border-left-color: #111;
+      border-bottom-color: #555; border-right-color: #555;
+      padding: 9px; width: 100%; resize: none; outline: none;
+    }
+    .textarea:focus { border-color: var(--green); }
+    .textarea::placeholder { color: #2a3a22; }
+    .hint { font-family: 'VT323', monospace; font-size: 14px; color: #3a4a32; margin-top: 3px; }
+
+    .expanded-box {
+      font-family: 'VT323', monospace; font-size: 22px; color: #88ffaa;
+      background: rgba(0,50,0,.4); border: 2px solid #1e4a1e;
+      padding: 10px; line-height: 1.5; display: none; word-break: break-word;
+      margin-top: 6px;
+    }
+    .expanded-box.on { display: block; }
+
+    /* ── big buttons ── */
+    .btnrow { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 7px; }
+    .btn {
+      font-family: 'Press Start 2P', monospace; font-size: 8px;
+      padding: 10px 8px; cursor: pointer; color: var(--text); border: none;
+      background: #4a4a4a;
+      border-top: 3px solid var(--border-hi); border-left: 3px solid var(--border-hi);
+      border-bottom: 3px solid var(--border-lo); border-right: 3px solid var(--border-lo);
+      flex: 1; min-width: 70px;
+    }
+    .btn:hover { filter: brightness(1.25); }
+    .btn:active {
+      border-top-color: var(--border-lo); border-left-color: var(--border-lo);
+      border-bottom-color: var(--border-hi); border-right-color: var(--border-hi);
+    }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .btn.go   { background: var(--green-dark); }
+    .btn.go:hover { background: var(--green); }
+    .btn.end  { background: #7a1a1a; }
+    .btn.gold { background: #4a3800; color: var(--yellow); }
+    .btn.gold:hover { background: #6a5200; }
+
+    /* ── status ── */
+    .status {
+      font-family: 'VT323', monospace; font-size: 15px;
+      color: var(--muted); text-align: center; margin-top: 6px; min-height: 18px;
+    }
+    .status.ok  { color: var(--green); }
+    .status.err { color: var(--red); }
+
+    /* ── sign popup ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.88);
+      z-index: 400; display: none; align-items: center; justify-content: center;
+    }
+    .overlay.on { display: flex; }
+    .sign-card {
+      background: #111a0e;
+      border: 3px solid #aaa; border-bottom-color: #222; border-right-color: #222;
+      padding: 14px; max-width: 320px; width: 93%; position: relative; text-align: center;
+    }
+    .sign-x {
+      position: absolute; top: 8px; right: 8px;
+      font-family: 'Press Start 2P', monospace; font-size: 8px;
+      color: var(--text); background: #5a1a1a; border: none;
+      border-top: 2px solid #888; border-left: 2px solid #888;
+      border-bottom: 2px solid #1a1a1a; border-right: 2px solid #1a1a1a;
+      padding: 5px 7px; cursor: pointer;
+    }
+    .sign-title {
+      font-size: 11px; color: var(--yellow);
+      text-shadow: 2px 2px 0 var(--yellow-dim);
+      margin-bottom: 8px; text-transform: uppercase; padding-right: 28px;
+    }
+    .stabs { display: flex; gap: 5px; margin-bottom: 8px; }
+    .stab {
+      font-family: 'Press Start 2P', monospace; font-size: 7px;
+      padding: 5px 6px; cursor: pointer; flex: 1;
+      color: var(--muted); background: transparent; border: 2px solid #333;
+    }
+    .stab.on { color: var(--yellow); border-color: var(--yellow); background: rgba(245,222,25,.07); }
+    .spane { display: none; }
+    .spane.on { display: block; }
+    .imgwrap {
+      min-height: 150px; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.3); border: 2px solid #222; margin-bottom: 8px;
+    }
+    .imgwrap img { max-width: 100%; max-height: 200px; }
+    .sload { font-family: 'VT323', monospace; font-size: 18px; color: #444; }
+    .sai   { font-family: 'VT323', monospace; font-size: 16px; color: #88ffaa; line-height: 1.5; text-align: left; }
+    .ssrc  { font-family: 'VT323', monospace; font-size: 12px; color: #444; margin-top: 4px; }
+    .serr  { font-family: 'VT323', monospace; font-size: 16px; color: #bb5555; padding: 8px; }
+
+    /* ── config warning ── */
+    .cfg-warn {
+      background: rgba(120,40,0,.35); border: 2px solid #884422;
+      padding: 9px 10px; margin-bottom: 8px;
+      font-family: 'VT323', monospace; font-size: 16px; color: #ffaa66; line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="header">
+    <div class="logo">🎙 HEAR-CRAFT</div>
+    <div class="tagline">Live transcription · sign lookup · smart replies</div>
+  </header>
+
+  <div class="cfg-warn" id="cfgWarn" style="display:none">
+    ⚠ PROXY NOT SET — open index.html, find PROXY_URL and paste your Cloudflare Worker URL.
+  </div>
+
+  <!-- ══ TABS ══ -->
+  <div class="tabs">
+    <button class="tab on"  id="t-listen" onclick="goTab('listen')">🎙 LISTEN</button>
+    <button class="tab"     id="t-reply"  onclick="goTab('reply')">✍ MY REPLY</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       LISTEN TAB
+  ══════════════════════════════════════════════════ -->
+  <div id="pane-listen">
+
+    <!-- sound bar -->
+    <div class="sound-bar" id="sbar">
+      <div class="sb" id="s0"></div><div class="sb" id="s1"></div><div class="sb" id="s2"></div>
+      <div class="sb" id="s3"></div><div class="sb" id="s4"></div><div class="sb" id="s5"></div>
+      <div class="sb" id="s6"></div><div class="sb" id="s7"></div><div class="sb" id="s8"></div>
+      <div class="sb" id="s9"></div><div class="sb" id="s10"></div><div class="sb" id="s11"></div>
+    </div>
+
+    <!-- live transcript -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="dot" id="dot"></span>
+        <span id="dotlabel">NOT LISTENING</span>
+      </div>
+      <div class="live-text" id="liveText"><span class="dim">[ Press START ]</span></div>
+    </div>
+
+    <!-- conversation log -->
+    <div class="panel">
+      <div class="panel-label">📜 CONVERSATION — tap any word to see its sign</div>
+      <div class="log" id="log">
+        <div class="no-replies" style="padding:4px 0">Nothing yet...</div>
+      </div>
+    </div>
+
+    <!-- suggested replies -->
+    <div class="panel">
+      <div class="panel-label">
+        💬 SUGGESTED REPLIES
+        <span class="spin" id="rspin"></span>
+      </div>
+      <div class="replies-wrap" id="rchips">
+        <div class="no-replies">Replies appear after someone speaks...</div>
+      </div>
+    </div>
+
+    <!-- controls -->
+    <div class="btnrow">
+      <button class="btn go"  id="btnStart" onclick="startMic()">▶ START</button>
+      <button class="btn end" id="btnStop"  onclick="stopMic()" disabled>■ STOP</button>
+      <button class="btn"     onclick="copyLog()">⊞ COPY</button>
+      <button class="btn"     onclick="clearAll()">✕ CLEAR</button>
+    </div>
+    <div class="status" id="status">Ready</div>
+
+  </div><!-- /listen -->
+
+  <!-- ══════════════════════════════════════════════
+       REPLY TAB
+  ══════════════════════════════════════════════════ -->
+  <div id="pane-reply" style="display:none">
+
+    <!-- type shorthand -->
+    <div class="panel">
+      <div class="panel-label">✍ TYPE KEYWORDS — AI WRITES THE SENTENCE</div>
+      <textarea class="textarea" id="typeInput" rows="3"
+        placeholder="e.g.  woke up, coffee, work, tired now"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();expandIt();}">
+      </textarea>
+      <div class="hint">💡 Type short keywords · press Enter or the button below</div>
+      <div style="margin-top:6px">
+        <button class="btn go" id="btnExpand" onclick="expandIt()" style="width:100%">🔨 EXPAND INTO SENTENCE</button>
+      </div>
+      <div class="expanded-box" id="expBox"></div>
+      <div id="expActions" style="display:none;margin-top:6px">
+        <div class="btnrow">
+          <button class="btn go"  onclick="sendReply()">✔ ADD TO CHAT</button>
+          <button class="btn gold" onclick="expandIt()">↺ TRY AGAIN</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- suggested replies (mirror) -->
+    <div class="panel">
+      <div class="panel-label">💬 OR PICK A SUGGESTED REPLY</div>
+      <div class="replies-wrap" id="rchips2">
+        <div class="no-replies">Go to LISTEN — replies appear after someone speaks</div>
+      </div>
+    </div>
+
+  </div><!-- /reply -->
+
+</div><!-- /wrap -->
+
+<!-- ══ SIGN POPUP ══ -->
+<div class="overlay" id="overlay" onclick="overlayClick(event)">
+  <div class="sign-card" id="signCard">
+    <button class="sign-x" onclick="closeSign()">✕</button>
+    <div class="sign-title" id="signWord">WORD</div>
+    <div class="stabs">
+      <button class="stab on" id="st-img" onclick="signTab('img')">🖼 SIGN IMAGE</button>
+      <button class="stab"    id="st-ai"  onclick="signTab('ai')">🤖 AI EXPLAIN</button>
+    </div>
+    <div class="spane on" id="sp-img">
+      <div class="imgwrap" id="imgwrap"><div class="sload">Searching...</div></div>
+      <div class="ssrc" id="ssrc"></div>
+    </div>
+    <div class="spane" id="sp-ai">
+      <div class="sai" id="sai"><span style="color:#333">Loading...</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIG — paste your Cloudflare Worker URL here
+//  e.g.  'https://hear-craft-proxy.yourname.workers.dev'
+// ═══════════════════════════════════════════════════════════
+const PROXY_URL = '';
+// ═══════════════════════════════════════════════════════════
+
+// ── state ─────────────────────────────────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+let actx = null, an = null, mic = null, mstream = null, raf = null;
+const sblocks = Array.from({length:12}, (_,i) => document.getElementById('s'+i));
+let msgCount = 0;
+let convo = [];           // [{who:'them'|'me', text}]
+let signCache = {};
+let activeSignWord = '';
+let expandedText = '';
+
+// ── init ──────────────────────────────────────────────────
+if (!PROXY_URL) document.getElementById('cfgWarn').style.display = 'block';
+if (!SR) {
+  document.getElementById('btnStart').disabled = true;
+  st('Need Chrome or Edge for speech recognition.', 'err');
+}
+
+// ── utilities ─────────────────────────────────────────────
+function st(m, cls='') {
+  const e = document.getElementById('status');
+  e.textContent = m; e.className = 'status ' + cls;
+}
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+async function api(body) {
+  if (!PROXY_URL) throw new Error('PROXY_URL not configured');
+  const r = await fetch(PROXY_URL, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error('Proxy ' + r.status);
+  return r.json();
+}
+
+// ── tabs ──────────────────────────────────────────────────
+function goTab(name) {
+  ['listen','reply'].forEach(t => {
+    document.getElementById('t-'+t).className = 'tab' + (t===name?' on':'');
+    document.getElementById('pane-'+t).style.display = t===name ? 'block' : 'none';
+  });
+}
+
+// ── audio visualiser ──────────────────────────────────────
+function animSb(on, lvls) {
+  sblocks.forEach((b,i) => {
+    const h = on && lvls ? Math.max(4, Math.floor(lvls[i]*28)) : 4;
+    b.style.height = h + 'px';
+    b.className = 'sb' + (on && lvls && lvls[i] > .06 ? ' on' : '');
+  });
+}
+function startAudio() {
+  navigator.mediaDevices.getUserMedia({audio:true}).then(s => {
+    mstream = s;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    an = actx.createAnalyser(); an.fftSize = 32;
+    mic = actx.createMediaStreamSource(s); mic.connect(an);
+    const buf = new Uint8Array(an.frequencyBinCount);
+    (function tick() {
+      if (!listening) return;
+      an.getByteFrequencyData(buf);
+      animSb(true, Array.from(buf).slice(0,12).map(v=>v/255));
+      raf = requestAnimationFrame(tick);
+    })();
+  }).catch(() => {});
+}
+function stopAudio() {
+  if (raf) cancelAnimationFrame(raf);
+  if (mic) mic.disconnect();
+  if (actx) { actx.close(); actx = null; }
+  if (mstream) { mstream.getTracks().forEach(t=>t.stop()); mstream = null; }
+  animSb(false, null);
+}
+
+// ── microphone ────────────────────────────────────────────
+function startMic() {
+  if (!SR || listening) return;
+  rec = new SR();
+  rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US';
+
+  rec.onstart = () => {
+    listening = true;
+    document.getElementById('dot').className = 'dot on';
+    document.getElementById('dotlabel').textContent = 'LISTENING...';
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled  = false;
+    st('Listening — speak now!', 'ok');
+    startAudio();
+  };
+
+  rec.onresult = e => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    const lt = document.getElementById('liveText');
+    if (final) {
+      const t = final.trim();
+      lt.innerHTML = '<span>' + esc(t) + '</span>';
+      addMsg(t, 'them');
+      genReplies(t);
+    } else if (interim) {
+      lt.innerHTML = '<span class="ghost">' + esc(interim) + '</span>';
+    }
+  };
+
+  rec.onerror = e => {
+    if (e.error === 'no-speech') { st('No speech detected...', ''); return; }
+    if (e.error === 'not-allowed') { st('Microphone blocked — allow mic access.', 'err'); stopMic(); return; }
+    st('Error: ' + e.error, 'err');
+  };
+
+  rec.onend = () => { if (listening) try { rec.start(); } catch(x) {} };
+
+  try { rec.start(); } catch(e) { st('Could not start mic.', 'err'); }
+}
+
+function stopMic() {
+  listening = false;
+  if (rec) { try { rec.stop(); } catch(e) {} rec = null; }
+  stopAudio();
+  document.getElementById('dot').className = 'dot';
+  document.getElementById('dotlabel').textContent = 'NOT LISTENING';
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  st('Stopped.', '');
+}
+
+// ── conversation log ──────────────────────────────────────
+function chips(text) {
+  return text.split(/\b/).map(tok => {
+    const clean = tok.replace(/[^a-zA-Z'-]/g,'');
+    if (clean.length > 1) {
+      const w = clean.toLowerCase();
+      return `<span class="w" onclick="openSign(${JSON.stringify(w)})">${esc(tok)}</span>`;
+    }
+    return esc(tok);
+  }).join('');
+}
+
+function addMsg(text, who) {
+  convo.push({who, text});
+  const log = document.getElementById('log');
+  const empty = log.querySelector('.no-replies');
+  if (empty) empty.remove();
+
+  const id = 'msg' + (++msgCount);
+  const div = document.createElement('div');
+  div.className = 'msg'; div.id = id;
+
+  div.innerHTML = `
+    <div class="msg-inner">
+      <span class="who ${who}">${who==='them'?'THEM':'ME'}</span>
+      <div style="flex:1">
+        <div class="words">${chips(text)}</div>
+        ${who==='them' ? `
+          <button class="smbtn" id="eb${id}" onclick="explainMsg('${id}',${JSON.stringify(text)})">❓ EXPLAIN</button>
+          <div class="explain" id="ex${id}"></div>
+        ` : ''}
+      </div>
+    </div>`;
+
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── explain ───────────────────────────────────────────────
+async function explainMsg(id, text) {
+  const box = document.getElementById('ex'+id);
+  const btn = document.getElementById('eb'+id);
+  btn.disabled = true;
+  box.className = 'explain on';
+  box.innerHTML = '<div style="color:#333;font-size:14px">🔍 asking AI...</div>';
+
+  try {
+    const data = await api({
+      model: 'claude-sonnet-4-20250514', max_tokens: 300,
+      messages: [{role:'user', content:
+        `A deaf Minecraft-English learner needs help with: "${text}"
+Reply ONLY as JSON (no markdown):
+{"simple":"rewrite simply, max 12 words","meaning":"explain in 1-2 short sentences","words":"explain hard words or: All easy!","reply":"what kind of answer: yes/no / a time / a place / etc"}`
+      }]
+    });
+    const raw = data.content.map(c=>c.text||'').join('');
+    let p;
+    try { p = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch { box.innerHTML = '<div>' + esc(raw) + '</div>'; return; }
+    box.innerHTML = `
+      <div class="eq">💬 SIMPLE:</div><div class="ea">${esc(p.simple||'')}</div>
+      <div class="eq" style="margin-top:5px">📖 MEANING:</div><div class="ea">${esc(p.meaning||'')}</div>
+      <div class="ew">🔤 HARD WORDS: ${esc(p.words||'')}</div>
+      <div class="er">💡 REPLY WITH: ${esc(p.reply||'')}</div>`;
+  } catch(e) {
+    box.innerHTML = '<div style="color:#883333">AI error — check PROXY_URL</div>';
+    btn.disabled = false;
+  }
+}
+
+// ── suggested replies ─────────────────────────────────────
+function setChips(replies) {
+  const html = replies === null
+    ? `<div class="reply-chip loading"><span class="rlabel">···</span><span class="rfull" style="color:#222">thinking...</span></div>`.repeat(3)
+    : replies.length === 0
+      ? '<div class="no-replies">Could not generate. Try again.</div>'
+      : replies.map(r => `
+          <button class="reply-chip" onclick="pickReply(${JSON.stringify(r.full)})">
+            <span class="rlabel">${esc(r.short)}</span>
+            <span class="rfull">${esc(r.full)}</span>
+          </button>`).join('');
+  document.getElementById('rchips').innerHTML  = html;
+  document.getElementById('rchips2').innerHTML = html;
+}
+
+async function genReplies(speech) {
+  document.getElementById('rspin').className = 'spin on';
+  setChips(null);
+
+  const ctx = convo.slice(-6).map(e => (e.who==='them'?'Other: ':'Me: ') + e.text).join('\n');
+  try {
+    const data = await api({
+      model: 'claude-sonnet-4-20250514', max_tokens: 300,
+      messages: [{role:'user', content:
+        `Help a deaf Minecraft-English learner reply.
+Last said: "${speech}"
+Conversation:\n${ctx}
+
+Give exactly 3 short friendly reply options. Simple English only.
+Reply ONLY as JSON array (no markdown):
+[{"short":"2-4 word label","full":"complete reply sentence"},{"short":"...","full":"..."},{"short":"...","full":"..."}]`
+      }]
+    });
+    const raw = data.content.map(c=>c.text||'').join('');
+    let reps;
+    try { reps = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch { setChips([]); return; }
+    setChips(reps);
+  } catch(e) {
+    setChips([]);
+  }
+  document.getElementById('rspin').className = 'spin';
+}
+
+function pickReply(text) {
+  expandedText = text;
+  document.getElementById('expBox').textContent = text;
+  document.getElementById('expBox').className = 'expanded-box on';
+  document.getElementById('expActions').style.display = 'block';
+  document.getElementById('typeInput').value = '';
+  goTab('reply');
+}
+
+// ── expand shorthand ──────────────────────────────────────
+async function expandIt() {
+  const input = document.getElementById('typeInput').value.trim();
+  if (!input) return;
+
+  const btn = document.getElementById('btnExpand');
+  btn.disabled = true; btn.textContent = '⏳ EXPANDING...';
+  document.getElementById('expBox').className = 'expanded-box';
+  document.getElementById('expActions').style.display = 'none';
+
+  const ctx = convo.slice(-4).map(e=>(e.who==='them'?'Other: ':'Me: ')+e.text).join('\n');
+  try {
+    const data = await api({
+      model: 'claude-sonnet-4-20250514', max_tokens: 120,
+      messages: [{role:'user', content:
+        `A deaf Minecraft-English learner typed these keywords: "${input}"
+${ctx ? 'Recent chat:\n'+ctx : ''}
+Write ONE natural friendly sentence from their keywords. Simple words only. Reply with ONLY the sentence.`
+      }]
+    });
+    expandedText = data.content.map(c=>c.text||'').join('').trim();
+    document.getElementById('expBox').textContent = expandedText;
+    document.getElementById('expBox').className = 'expanded-box on';
+    document.getElementById('expActions').style.display = 'block';
+  } catch(e) {
+    document.getElementById('expBox').textContent = 'Error — check PROXY_URL';
+    document.getElementById('expBox').className = 'expanded-box on';
+  }
+  btn.disabled = false; btn.textContent = '🔨 EXPAND INTO SENTENCE';
+}
+
+function sendReply() {
+  if (!expandedText) return;
+  addMsg(expandedText, 'me');
+  document.getElementById('typeInput').value = '';
+  document.getElementById('expBox').className = 'expanded-box';
+  document.getElementById('expActions').style.display = 'none';
+  expandedText = '';
+  goTab('listen');
+}
+
+// ── sign lookup ───────────────────────────────────────────
+function openSign(word) {
+  activeSignWord = word;
+  document.getElementById('signWord').textContent = word.toUpperCase();
+  document.getElementById('imgwrap').innerHTML = '<div class="sload">🔍 Searching...</div>';
+  document.getElementById('ssrc').textContent = '';
+  document.getElementById('sai').innerHTML = '<span style="color:#333">Loading...</span>';
+  signTab('img');
+  document.getElementById('overlay').className = 'overlay on';
+  fetchSign(word);
+}
+
+async function fetchSign(word) {
+  if (signCache[word]) { renderSign(word, signCache[word]); return; }
+  try {
+    const data = await api({
+      model: 'claude-sonnet-4-20250514', max_tokens: 250,
+      tools: [{type:'web_search_20250305', name:'web_search'}],
+      messages: [{role:'user', content:
+        `Find a sign language image for the word "${word}". Search: ASL sign "${word}" site:handspeak.com OR site:lifeprint.com
+Reply ONLY as JSON (no markdown): {"imageUrl":"direct image url ending .gif or .jpg or .png, or null","description":"2 simple sentences: meaning and how to sign it"}`
+      }]
+    });
+    const txt = data.content.filter(c=>c.type==='text').map(c=>c.text).join('');
+    let p = null;
+    try {
+      const m = txt.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
+      if (m) p = JSON.parse(m[0]);
+    } catch(e) {}
+    signCache[word] = { imageUrl: p?.imageUrl||null, desc: p?.description || txt.slice(0,250) || 'No info found.' };
+  } catch(e) {
+    signCache[word] = { imageUrl: null, desc: 'Could not load. Check connection.' };
+  }
+  renderSign(word, signCache[word]);
+}
+
+function renderSign(word, d) {
+  if (activeSignWord !== word) return;
+  if (d.imageUrl) {
+    const img = new Image();
+    img.src = d.imageUrl; img.alt = 'Sign: ' + word;
+    img.onerror = () => {
+      document.getElementById('imgwrap').innerHTML = '<div class="serr">Image failed.<br>See AI tab.</div>';
+    };
+    img.onload = () => {
+      const w = document.getElementById('imgwrap');
+      if (w) { w.innerHTML = ''; w.appendChild(img); }
+    };
+    document.getElementById('ssrc').textContent = 'Source: ASL dictionary';
+  } else {
+    document.getElementById('imgwrap').innerHTML = '<div class="serr">No image found.<br>See AI tab.</div>';
+    signTab('ai');
+  }
+  if (d.desc) document.getElementById('sai').textContent = d.desc;
+}
+
+function signTab(name) {
+  ['img','ai'].forEach(t => {
+    document.getElementById('st-'+t).className = 'stab' + (t===name?' on':'');
+    document.getElementById('sp-'+t).className = 'spane' + (t===name?' on':'');
+  });
+}
+function closeSign() { document.getElementById('overlay').className = 'overlay'; activeSignWord = ''; }
+function overlayClick(e) { if (e.target === document.getElementById('overlay')) closeSign(); }
+
+// ── utility ───────────────────────────────────────────────
+function copyLog() {
+  if (!convo.length) { st('Nothing to copy.', ''); return; }
+  const txt = convo.map(e => (e.who==='them'?'THEM: ':'ME:   ') + e.text).join('\n');
+  navigator.clipboard.writeText(txt)
+    .then(() => st('Copied!', 'ok'))
+    .catch(() => st('Copy failed.', 'err'));
+}
+
+function clearAll() {
+  convo = []; msgCount = 0; signCache = {}; expandedText = '';
+  document.getElementById('liveText').innerHTML = '<span class="dim">[ Press START ]</span>';
+  document.getElementById('log').innerHTML = '<div class="no-replies" style="padding:4px 0">Nothing yet...</div>';
+  document.getElementById('rchips').innerHTML  = '<div class="no-replies">Replies appear after someone speaks...</div>';
+  document.getElementById('rchips2').innerHTML = '<div class="no-replies">Go to LISTEN — replies appear after someone speaks</div>';
+  document.getElementById('typeInput').value = '';
+  document.getElementById('expBox').className = 'expanded-box';
+  document.getElementById('expActions').style.display = 'none';
+  st('Cleared.', '');
+}
+</script>
+</body>
+</html>
